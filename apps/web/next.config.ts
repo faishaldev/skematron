@@ -4,8 +4,8 @@ import type { NextConfig } from "next";
 
 const repositoryRoot = resolve(process.cwd(), "../..");
 
-// The database URL lives in the repository's .env (written by `pnpm db:test:start`).
-// Variables already set in the environment, such as DATABASE_URL, take precedence.
+// Configuration lives in the repository's .env (written by `pnpm db:start`).
+// Variables already set in the environment take precedence over the file.
 const envFile = resolve(repositoryRoot, ".env");
 if (existsSync(envFile)) process.loadEnvFile(envFile);
 

@@ -47,6 +47,11 @@ Get legal review before choosing.
 - Paid-feature code lives in its own clearly separated module. If open-core is chosen, that module carries its own license.
 - SaaS-only code (billing provider, metering, multi-tenant hardening such as SSRF rules) sits behind a deployment-mode setting. Self-hosted installs do not enforce SaaS trial limits (AGENTS.md).
 - When a trial or license ends, features degrade to the free edition. Read and export keep working, and data is never deleted (AGENTS.md "Storage and SaaS Trial").
+- **Hook points in the dashboard as built:**
+  - Role permissions are decided in `apps/web/lib/roles.ts` (`can`).
+  - Every request already goes through `requirePermission()` in `apps/web/lib/session.ts`.
+  - An entitlement check ("does this organization's edition include feature X") belongs next to that check in `session.ts`. It must not go into `roles.ts`, which stays about roles.
+  - Storage quotas belong in `@skematron/storage` writes (`put`), with the policy injected by the app.
 
 ## Outside the code
 

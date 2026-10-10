@@ -21,8 +21,9 @@ Things that surprised someone or cost time, and what to do about them. Add new o
   - Use `import type` for types.
   - Node refuses to strip types under `node_modules`. Workspace packages work because they resolve to their real paths.
 - **Where packages resolve from.** `pg` is a dependency of `packages/adapters` only. One-off scripts that import it must run from that directory.
-- **The local Homebrew PostgreSQL requires a password, even over the Unix socket.** Do not weaken its auth. Use `pnpm db:test:start`.
-- **When `.env` exists, `pnpm check` needs the test cluster running.** The integration tests fail, rather than skip, when a configured database is unreachable. Run `pnpm db:test:start` first, for example after a reboot.
+- **The local Homebrew PostgreSQL requires a password, even over the Unix socket.** Do not weaken its auth. Use `pnpm db:start`.
+- **When `.env` exists, `pnpm check` needs the local cluster running.** The integration tests fail, rather than skip, when a configured database is unreachable. Run `pnpm db:start` first, for example after a reboot.
+- **`process.loadEnvFile` never overrides variables that are already set.** That makes it safe to pass `SKEMATRON_DATABASE_URL` explicitly to Prisma, as the integration tests do.
 - **initdb with macOS's bare `UTF-8` locale** warns that it found no text search configuration. The test cluster uses `--locale=C`.
 - **Unix socket paths are limited to about 103 bytes on macOS.** Keep the test cluster directory short. The current path is about 77 bytes.
 - **Prettier skips Markdown on purpose** (`.prettierignore`), so hand-written docs keep their formatting.
@@ -38,6 +39,24 @@ Things that surprised someone or cost time, and what to do about them. Add new o
 - **The repository `.env` is not in the app directory.** Next only loads `.env` from `apps/web`, so `next.config.ts` calls `process.loadEnvFile` on the root `.env`. Variables already set, such as `DATABASE_URL`, win.
 - **Server actions reject a mismatched `Origin`** with a 500 and "Invalid Server Actions request". To post a form with curl, send `Origin: http://127.0.0.1:3100` and the hidden `$ACTION_ID_…` field taken from the page.
 - **Page HTML contains every string twice**: once in the markup and once in the embedded React Server Components payload. Halve counts when grepping HTML in tests.
+- **`redirect()` throws, so catching it breaks it.** Server actions wrap their work in `runAction()`, which calls `unstable_rethrow` first in its `catch`. Without that, the redirects from `requireActor()` (to `/sign-in`) would be shown as errors.
+- **React splits text around values.** `{n} operations` renders as `19<!-- --> operations`. Strip `<!-- -->` before matching page text.
+
+## Prisma and Better Auth
+
+- **npm's `latest` tag for `prisma` was an 8.0 release candidate** (2026-10-10), and Better Auth supports Prisma up to 7, so the versions are pinned to 7.10.0. Check Better Auth's peer dependencies before upgrading.
+- **pnpm 10 skips Prisma's install scripts** ("Ignored build scripts"). The CLI downloads the schema engine when it first needs it, so this is harmless.
+- **Prisma's engine needs a host in the URL, even for a Unix socket.** Use `postgresql://user@localhost:54329/db?host=/socket/dir`. node-postgres also accepts `postgresql:///db?host=…&port=…`, but Prisma does not.
+- **The Better Auth CLI (`auth generate`) loads `lib/auth.ts`.**
+  - Export the `.env` variables first: `env $(grep -v '^#' .env | xargs) pnpm dlx auth@1.7.7 generate …`.
+  - It rewrites the whole schema file and inserts blank lines after `///` comments, which detaches them; remove those lines.
+  - `lib/auth.ts` must not import `server-only`, or the CLI cannot load it.
+- **`Invitation.role` is optional** in the generated schema. Treat a missing role as `member`.
+- **Better Auth's own HTTP endpoints exist alongside the dashboard** (`/api/auth/organization/*`).
+  - They enforce Better Auth's permissions, but they skip the app's audit log.
+  - The owner role leaves out organization delete, and users cannot create organizations, so the risky endpoints are closed.
+  - Keep that in mind whenever you change roles.
+- **The WHATWG URL parser re-encodes passwords.** A `:` inside a password becomes `%3A`, which decodes to the same password. Compare decoded values.
 
 ## Safety
 

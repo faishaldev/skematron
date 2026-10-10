@@ -219,3 +219,80 @@ button {
 button:hover {
   border-color: var(--accent);
 }
+
+.top .nav {
+  display: flex;
+  gap: 16px;
+  margin-left: 12px;
+}
+
+.top .nav a {
+  color: var(--text);
+}
+
+.spacer {
+  flex: 1;
+}
+
+.top form {
+  margin: 0;
+}
+
+.narrow {
+  max-width: 460px;
+  margin: 48px auto;
+  padding: 0 24px;
+}
+
+form.stack {
+  display: grid;
+  gap: 12px;
+}
+
+form.inline {
+  display: inline-flex;
+  gap: 8px;
+  align-items: center;
+  margin: 0;
+}
+
+label {
+  display: grid;
+  gap: 4px;
+  font-size: 14px;
+}
+
+input,
+select,
+textarea {
+  font: inherit;
+  font-size: 14px;
+  padding: 6px 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--text);
+}
+
+button.primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+
+button.danger {
+  color: var(--destructive);
+}
+
+.hint {
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.page-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}

@@ -99,7 +99,7 @@ An append-only log of design decisions.
   - No credentials are handled and the existing server is untouched.
   - Docker Compose (AGENTS.md) remains the plan for the app and self-hosting, and can replace this script later.
 
-## D11: A local, read-only schema viewer as the first web app (2026-10-10, accepted)
+## D11: A local, read-only schema viewer as the first web app (2026-10-10, superseded by D12)
 
 - **Context.** The owner wanted to try Skematron in a browser. The product dashboard needs authentication, organizations, a metadata database and storage, which is too much for a first step. AGENTS.md says not to build enterprise features before the core workflow works.
 - **Decision.**
@@ -111,3 +111,59 @@ An append-only log of design decisions.
 - **Consequences.**
   - The viewer must never be deployed or exposed. The real dashboard needs authentication and per-project authorization first (AGENTS.md "Security").
   - The snapshot store is the local precursor of `packages/storage`; extract it when the CLI or the dashboard needs it.
+
+## D12: The dashboard runs Better Auth in single-organization mode (2026-10-10, accepted)
+
+- **Context.** The local viewer (D11) proved the workflow in a browser. A dashboard that teams use needs real authentication, roles and invitations. It must also work self-hosted, without depending on the hosted service.
+- **Decision.**
+  - Better Auth 1.7.7: email and password, plus the organization plugin, with sessions in the metadata database through its Prisma adapter.
+  - Single-organization mode: `/setup` creates the one organization and its owner, then sign-up is invitation-only. The `maySignUp` hook in `user.create.before` enforces this.
+  - Roles are viewer, member, admin and owner. App permissions come from `lib/roles.ts`; Better Auth access control covers organization management only.
+  - The owner role cannot delete the organization, and users cannot create organizations.
+  - Invitations are links, with no email. Telemetry is off.
+  - The local viewer is removed; its features moved under projects.
+- **Consequences.**
+  - The dashboard can be self-hosted for one team. Hosted multi-tenant mode reuses the same tables, but needs an SSRF guard, quotas and entitlements first.
+  - Accepting an invitation is done by the app itself (`acceptInvitation`), so membership and the audit log stay consistent.
+
+## D13: Prisma 7.10.0 for the metadata database, pinned (2026-10-10, accepted)
+
+- **Context.** AGENTS.md lists Prisma for the metadata database. On 2026-10-10, npm's `latest` tag for `prisma` pointed at 8.0.0-rc.22, while Better Auth supports Prisma 5–7.
+- **Decision.**
+  - Pin `prisma`, `@prisma/client` and `@prisma/adapter-pg` to 7.10.0.
+  - Use the `prisma-client` generator (ESM, `importFileExtension = "ts"`, output `apps/web/generated/prisma`, git-ignored, generated on install) with the `@prisma/adapter-pg` driver.
+  - The schema and migrations are in root `prisma/`; `prisma.config.ts` reads `SKEMATRON_DATABASE_URL`.
+- **Consequences.**
+  - The generated client works under Node's native TypeScript, so `node:test` integration tests can use it.
+  - Upgrade to Prisma 8 only together with a Better Auth release that supports it.
+
+## D14: Stored connection URLs are encrypted with AES-256-GCM (2026-10-10, accepted)
+
+- **Decision.**
+  - `lib/secrets.ts` encrypts with `SKEMATRON_SECRET_KEY` (32 bytes, base64) and a random IV, producing the format `v1.<iv>.<ciphertext>.<tag>`.
+  - Only a redacted `connectionHint` is stored in plaintext.
+  - Only `lib/targets.ts` decrypts.
+  - URLs are validated against an allow-list of parameters, which rules out file-reading SSL options.
+- **Consequences.**
+  - Losing the key means stored connections must be re-entered, so back it up together with the database.
+  - The `v1` prefix leaves room for key rotation.
+
+## D15: Content-addressed artifact store (`@skematron/storage`) (2026-10-10, accepted)
+
+- **Decision.**
+  - Artifacts are files named by their SHA-256 under `SKEMATRON_ARTIFACT_DIR` (default `.local/artifacts` in development; required in production).
+  - Writes are atomic (a temporary file, then `link`) and never overwrite.
+  - Reads are verified against the key.
+  - A schema version's checksum is its artifact key.
+- **Consequences.**
+  - Identical snapshots are stored once.
+  - An artifact left by a failed version insert is harmless, and can be garbage-collected later.
+  - Quotas, and other storage backends behind the same interface, are future work.
+
+## D16: One local PostgreSQL cluster for development and tests (2026-10-10, accepted; extends D10)
+
+- **Decision.**
+  - `scripts/test-postgres.sh` becomes `scripts/local-postgres.sh`, with commands `pnpm db:start`, `db:seed` and `db:stop`. The `db:test:*` aliases are kept.
+  - It also creates the `skematron` metadata database, and adds missing `.env` keys with generated secrets: `SKEMATRON_DATABASE_URL`, `SKEMATRON_SECRET_KEY`, `BETTER_AUTH_SECRET` and `BETTER_AUTH_URL`.
+  - It never overwrites existing keys.
+- **Consequences.** A fresh clone runs the dashboard with `pnpm install`, `pnpm db:start`, `pnpm db:migrate` and `pnpm web`.

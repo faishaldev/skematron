@@ -27,15 +27,25 @@ All notable changes to Skematron are recorded here. The format follows [Keep a C
 - **Tests.**
   - Unit tests for canonicalization, planning, rendering and introspection.
   - PostgreSQL integration tests: exported DDL recreates an identical checksum, and a v1 → v2 migration reaches an equivalent schema.
-- **Test database.** `pnpm db:test:start` / `pnpm db:test:stop` run a disposable, socket-only PostgreSQL cluster in `.local/` for integration tests.
-- **Local web viewer (`apps/web`, `pnpm web`).** A read-only Next.js 16 app on <http://127.0.0.1:3100> with no login, for your machine only.
-  - Browse a schema's tables, keys, indexes, enums, sequences and uncaptured objects.
-  - View or download its export SQL.
-  - Save immutable, checksum-verified snapshots to `.local/snapshots`.
-  - Compare the live schema with a saved snapshot as a risk-rated migration.
-- **`pnpm db:test:seed v2`** loads the changed sample schema, so you can try Compare.
-- **Try it in two commands.**
-  - `pnpm db:test:seed` loads a sample `demo` schema into the test database.
+  - Dashboard tests:
+    - unit tests for permissions, encryption, URL validation and redaction
+    - integration tests against a throwaway metadata database: the sign-up gate, invitations, organization scoping, encrypted storage, and concurrent version numbering
+- **Local PostgreSQL (`pnpm db:start` / `db:stop`).**
+  - A disposable, socket-only cluster in `.local/`, with a metadata database (`skematron`) and a test database (`skematron_test`).
+  - It adds missing `.env` keys with generated secrets.
+  - The earlier `db:test:*` names still work.
+- **Dashboard (`apps/web`, `pnpm web`)**, built on Next.js 16, Better Auth and Prisma 7. It runs in single-organization mode for self-hosting:
+  - **Accounts:** first-run setup at `/setup` creates the organization and its owner. After that, people join only through invitation links.
+  - **Roles:** viewer, member, admin and owner, enforced on the server for every page, action and download. Admins manage members on the Members page.
+  - **Projects and environments:** an environment is a database target. Its connection URL is stored encrypted (AES-256-GCM) and only ever shown redacted.
+  - **Importing:** reads a version from an environment, read-only. Versions are immutable, numbered per project, and stored as checksum-verified artifacts. An unchanged schema creates no new version.
+  - **Comparing:** browse any version, compare two versions, or check an environment for drift as a risk-rated migration. Export SQL or the snapshot JSON.
+  - **Audit log:** setup, invitations, role changes, project and environment changes, and imports.
+- **Metadata database** for Skematron's own data (`prisma/`): `pnpm db:migrate` in development, `pnpm db:deploy` in production. `docs/self-hosting.md` covers configuration, backups and upgrades.
+- **`@skematron/storage`:** a content-addressed artifact store whose writes are atomic and never overwrite, and whose reads are verified against their checksum.
+- **`pnpm db:seed v2`** loads the changed sample schema, so you can try Compare.
+- **Try the libraries without the dashboard.**
+  - `pnpm db:seed` loads a sample `demo` schema into the test database.
   - `pnpm example:export [schema…]` reads a schema (read-only) and prints its checksum, the objects it could not capture, and the SQL that recreates it. Set `DATABASE_URL` to read your own database instead.
 - **AI docs** for Claude Code, Codex and other agents:
   - rules in `ai/rules/`

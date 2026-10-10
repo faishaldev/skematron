@@ -10,6 +10,7 @@ const ROOT_CONFIG = new Set([
   "pnpm-workspace.yaml",
   "tsconfig.json",
   ".env.example",
+  "prisma.config.ts",
 ]);
 
 /** Whether a change to this repository path must be recorded in CHANGELOG.md. */
@@ -22,7 +23,7 @@ export function requiresChangelog(path: string): boolean {
     return false;
   if (ROOT_CONFIG.has(path)) return true;
   if (/^packages\/[^/]+\/package\.json$/.test(path)) return true;
-  return /^(packages\/[^/]+\/(src|examples)|apps|scripts)\//.test(path);
+  return /^(packages\/[^/]+\/(src|examples)|apps|scripts|prisma)\//.test(path);
 }
 
 /** Changed paths that need a changelog entry, or none if CHANGELOG.md itself changed. */

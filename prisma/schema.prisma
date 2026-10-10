@@ -1,0 +1,211 @@
+// Skematron's own metadata database. It changes only through migrations in prisma/migrations
+// (`pnpm db:migrate` in development, `pnpm db:deploy` in production). These migrations must
+// never be applied to a user's application database. See ai/rules/metadata.md.
+
+generator client {
+  provider            = "prisma-client"
+  output              = "../apps/web/generated/prisma"
+  runtime             = "nodejs"
+  moduleFormat        = "esm"
+  importFileExtension = "ts"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+/// The self-hosted installation: a single row (id = 1) holding its one organization.
+/// Inserting the row claims first-run setup.
+model Installation {
+  id             Int      @id @default(1)
+  /// "pending" while setup runs, then "complete".
+  status         String
+  ownerEmail     String
+  organizationId String?  @unique
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@map("installation")
+}
+
+model Project {
+  id             String          @id @default(uuid(7))
+  organizationId String
+  slug           String
+  name           String
+  createdById    String
+  createdAt      DateTime        @default(now())
+  environments   Environment[]
+  versions       SchemaVersion[]
+
+  @@unique([organizationId, slug])
+  @@map("project")
+}
+
+/// A database target. The connection URL is stored only encrypted (AES-256-GCM).
+model Environment {
+  id                   String   @id @default(uuid(7))
+  projectId            String
+  project              Project  @relation(fields: [projectId], references: [id], onDelete: Restrict)
+  name                 String
+  engine               String
+  connectionCiphertext String
+  /// Redacted URL for display; never contains the password.
+  connectionHint       String
+  namespaces           String[]
+  createdById          String
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+
+  @@unique([projectId, name])
+  @@map("environment")
+}
+
+/// An immutable schema version. The snapshot itself is an artifact keyed by `checksum`.
+model SchemaVersion {
+  id            String   @id @default(uuid(7))
+  projectId     String
+  project       Project  @relation(fields: [projectId], references: [id], onDelete: Restrict)
+  number        Int
+  checksum      String
+  dialect       String
+  formatVersion Int
+  sizeBytes     Int
+  /// Provenance: environment id and name, server version, adapter.
+  source        Json
+  /// Objects the introspection reported but did not capture.
+  unsupported   Json
+  note          String?
+  createdById   String
+  createdAt     DateTime @default(now())
+
+  @@unique([projectId, number])
+  @@index([projectId, checksum])
+  @@map("schema_version")
+}
+
+/// Privileged actions. Details never contain secrets.
+model AuditEvent {
+  id             String   @id @default(uuid(7))
+  organizationId String
+  actorId        String?
+  action         String
+  targetType     String
+  targetId       String?
+  details        Json
+  createdAt      DateTime @default(now())
+
+  @@index([organizationId, createdAt])
+  @@map("audit_event")
+}
+
+model User {
+  id            String       @id
+  name          String
+  email         String
+  emailVerified Boolean      @default(false)
+  image         String?
+  createdAt     DateTime     @default(now())
+  updatedAt     DateTime     @updatedAt
+  sessions      Session[]
+  accounts      Account[]
+  members       Member[]
+  invitations   Invitation[]
+
+  @@unique([email])
+  @@map("user")
+}
+
+model Session {
+  id                   String   @id
+  expiresAt            DateTime
+  token                String
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+  ipAddress            String?
+  userAgent            String?
+  userId               String
+  user                 User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  activeOrganizationId String?
+
+  @@unique([token])
+  @@index([userId])
+  @@map("session")
+}
+
+model Account {
+  id                    String    @id
+  accountId             String
+  providerId            String
+  userId                String
+  user                  User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  accessToken           String?
+  refreshToken          String?
+  idToken               String?
+  accessTokenExpiresAt  DateTime?
+  refreshTokenExpiresAt DateTime?
+  scope                 String?
+  password              String?
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+
+  @@index([userId])
+  @@map("account")
+}
+
+model Verification {
+  id         String   @id
+  identifier String
+  value      String
+  expiresAt  DateTime
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@index([identifier])
+  @@map("verification")
+}
+
+model Organization {
+  id          String       @id
+  name        String
+  slug        String
+  logo        String?
+  createdAt   DateTime
+  metadata    String?
+  members     Member[]
+  invitations Invitation[]
+
+  @@unique([slug])
+  @@map("organization")
+}
+
+model Member {
+  id             String       @id
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  userId         String
+  user           User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role           String       @default("member")
+  createdAt      DateTime
+
+  @@index([organizationId])
+  @@index([userId])
+  @@map("member")
+}
+
+model Invitation {
+  id             String       @id
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  email          String
+  role           String?
+  status         String       @default("pending")
+  expiresAt      DateTime
+  createdAt      DateTime     @default(now())
+  inviterId      String
+  user           User         @relation(fields: [inviterId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId])
+  @@index([email])
+  @@map("invitation")
+}

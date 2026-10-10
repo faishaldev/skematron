@@ -44,7 +44,7 @@ Keep the repository small. A reasonable starting point is:
 - `infra/compose`: Docker Compose files and deployment configuration.
 - `docs/`: user and developer documentation.
 - `ai/`: AI-facing docs: `rules/`, `skills/` (the source for the `.claude/skills` and `.codex/skills` copies), and `knowledges/`.
-- `scripts/`: repository tooling (AI-doc sync, documentation gate, local test database).
+- `scripts/`: repository tooling (AI-doc sync, documentation gate, local PostgreSQL).
 
 Do not create every directory or package up front. Introduce boundaries as the code requires them.
 
@@ -174,9 +174,16 @@ Pre-alpha. What exists:
 
 - `packages/core` (`@skematron/core`): snapshot format v1, canonical JSON with SHA-256 checksums, and `planMigration` (ordered operations with risk levels, warnings and unsupported changes).
 - `packages/adapters` (`@skematron/adapters`): read-only PostgreSQL 14+ introspection (`introspectPostgres`) and SQL rendering (`renderPostgresMigration`).
-- `apps/web` (`@skematron/web`): a **local, read-only schema viewer**, not the product dashboard. It runs on Next.js 16, has no login, and binds to `127.0.0.1` only. It lets you browse a schema, export its SQL, save snapshots to `.local/snapshots`, and compare the live schema with a saved snapshot.
+- `packages/storage` (`@skematron/storage`): content-addressed, checksum-verified artifact files.
+- `apps/web` (`@skematron/web`): the **dashboard**, in single-organization mode. It runs on Next.js 16, Better Auth and Prisma 7, with a metadata database in `prisma/`.
+  - First-run setup and invitation-only sign-up.
+  - Roles: viewer, member, admin, owner.
+  - Projects, and environments whose connection URLs are encrypted.
+  - Versions are imported read-only, immutable and checksummed.
+  - Compare versions, check drift, export SQL or JSON.
+  - An audit log.
 
-Not built yet: the real dashboard (authentication, organizations, projects), the CLI, the metadata database, artifact storage beyond the viewer's local snapshot files, apply/execution, Prisma and SQL DDL import, and Docker Compose. The CLI command names above are still plans. See `ai/knowledges/architecture.md`.
+Not built yet: hosted multi-tenant SaaS mode (SSRF guard, quotas, billing), the CLI and API tokens, saved plans and approvals, apply/execution, Prisma and SQL DDL import, email delivery, and Docker Compose. The CLI command names above are still plans. See `ai/knowledges/architecture.md` and `docs/self-hosting.md`.
 
 ## Development
 
@@ -190,13 +197,19 @@ Not built yet: the real dashboard (authentication, organizations, projects), the
   - `pnpm check`: typecheck, Prettier check, all tests, and the documentation gate. It must pass before a change is done.
   - `pnpm test`, `pnpm typecheck`, `pnpm format`
   - `pnpm sync:ai`: copy `ai/skills` to the tool folders.
-- PostgreSQL integration tests run only when `SKEMATRON_TEST_DATABASE_URL` is set (`.env`, git-ignored).
-  - `pnpm db:test:start` starts a disposable, socket-only local cluster in `.local/` and writes `.env`. `pnpm db:test:stop` stops it.
-  - Never point the URL at a shared or production database.
+- Local databases:
+  - `pnpm db:start` starts a disposable, socket-only local PostgreSQL in `.local/`. It holds `skematron` (the metadata database) and `skematron_test` (tests and the demo schema).
+  - It adds any missing `.env` keys with generated secrets, and never overwrites existing ones.
+  - `pnpm db:stop` stops it. The `db:test:*` names are aliases.
+- Metadata database (Prisma, see `ai/rules/metadata.md`):
+  - `pnpm db:migrate` creates and applies migrations in development; `pnpm db:deploy` applies them in production.
+  - `pnpm db:generate` regenerates the client. Install runs it too.
+- PostgreSQL integration tests run only when `SKEMATRON_TEST_DATABASE_URL` is set (`.env`, git-ignored). Never point it at a shared or production database.
 - Try it by hand:
-  - `pnpm db:test:seed [v1|v2]` loads a sample `demo` schema into the test database. It writes to the test cluster only. Loading `v2` afterwards gives Compare something to show.
+  - `pnpm web` starts the dashboard at <http://127.0.0.1:3100>. The first visit goes to `/setup`.
+  - `pnpm db:seed [v1|v2]` loads a sample `demo` schema into `skematron_test`. It writes to the local cluster only. Add it as an environment with that URL and schema `demo`; loading `v2` later gives Compare something to show.
   - `pnpm example:export [schema…]` runs `packages/adapters/examples/export-schema.ts`. It is read-only, and uses `DATABASE_URL` or else the test database.
-  - `pnpm web` starts the local viewer at <http://127.0.0.1:3100>. It uses `DATABASE_URL` or else the test database from `.env`.
+- Configuration for self-hosting: `docs/self-hosting.md`.
 - Use pnpm only. `npm install` creates `package-lock.json` and mixes up `node_modules`.
 
 ## AI Docs: Rules, Skills, Knowledges
@@ -208,6 +221,7 @@ All AI-facing documentation lives in `ai/`. Before changing code, read this file
 | `packages/core/**` | `ai/rules/core.md` |
 | `packages/adapters/**` | `ai/rules/adapters.md` |
 | `apps/web/**` | `ai/rules/web.md` |
+| `prisma/**`, `prisma.config.ts`, Prisma queries | `ai/rules/metadata.md` |
 | Tests, fixtures, test databases | `ai/rules/testing.md` |
 | Every change | `ai/rules/documentation.md` |
 

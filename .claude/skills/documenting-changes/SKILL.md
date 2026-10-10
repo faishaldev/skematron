@@ -37,7 +37,8 @@ Leave the documentation as accurate as the code, in the same change. This skill 
    - If this change repeated a workflow you have done before, write a new skill in `ai/skills/<gerund-name>/SKILL.md` with `name` and `description` frontmatter.
 8. **Sync and verify.**
    - Run `pnpm sync:ai`, then `pnpm check`, and fix anything they report.
-   - If you touched the adapter, planner or renderer, also run the integration tests (`pnpm db:test:start`, then `pnpm test`).
+   - If you touched the adapter, planner, renderer or the metadata layer, also run the integration tests (`pnpm db:start`, then `pnpm test`).
+   - If you touched dashboard pages or actions, click through the changed flow with `pnpm web` (see `ai/rules/testing.md`).
 
 ## Done when
 

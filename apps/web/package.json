@@ -12,8 +12,12 @@
     "typecheck": "next typegen && tsc --noEmit"
   },
   "dependencies": {
+    "@prisma/adapter-pg": "7.10.0",
+    "@prisma/client": "7.10.0",
     "@skematron/adapters": "workspace:*",
     "@skematron/core": "workspace:*",
+    "@skematron/storage": "workspace:*",
+    "better-auth": "1.7.7",
     "next": "^16.4.0",
     "pg": "^8.23.1",
     "react": "^19.3.0",

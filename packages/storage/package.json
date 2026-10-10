@@ -1,0 +1,11 @@
+{
+  "name": "@skematron/storage",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Content-addressed, checksum-verified artifact storage on the local filesystem.",
+  "license": "UNLICENSED",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  }
+}

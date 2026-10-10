@@ -1,6 +1,9 @@
 # Architecture
 
-Status as of 2026-10-10: pre-alpha. The repository contains two libraries and a local, read-only schema viewer. Nothing is deployed, there is no CLI, and the product dashboard has not been built.
+Status as of 2026-10-10: pre-alpha.
+
+- **What exists:** two libraries, an artifact store, and the first dashboard (single-organization mode).
+- **Not built yet:** the CLI, deployment packaging, and an apply step.
 
 ## Packages and apps
 
@@ -8,43 +11,70 @@ Status as of 2026-10-10: pre-alpha. The repository contains two libraries and a 
 | --- | --- | --- | --- |
 | `@skematron/core` | `packages/core` | Snapshot model, canonical form and checksum, migration planning. Pure and deterministic. | Only its own modules |
 | `@skematron/adapters` | `packages/adapters` | Database adapters. Today: PostgreSQL introspection and SQL rendering. | Its own modules and `@skematron/core` |
-| `@skematron/web` | `apps/web` | Local, read-only schema viewer (Next.js 16): browse, export, save snapshots, compare. No login; binds to `127.0.0.1`. | Core, adapters, `pg`, Next.js and React |
+| `@skematron/storage` | `packages/storage` | Content-addressed, checksum-verified artifact files (key = `sha256:<hex>`). | Node built-ins and its own modules |
+| `@skematron/web` | `apps/web` | The dashboard: Next.js 16, Better Auth, Prisma 7 against the metadata database. | Everything above, plus `pg`, Next.js, React, Better Auth, Prisma |
 
 `@skematron/core/testing` exports snapshot builders. It is for tests only.
 
-### The viewer
+## The dashboard (`apps/web`)
 
+- **Single-organization mode.**
+  - First-run setup (`/setup`) creates the installation's one organization and its owner. The `installation` row, `id = 1`, records it.
+  - After that, sign-up is invitation-only: invitation links on `/settings/members`, with no email.
+- **Roles and permissions:** `lib/roles.ts` is the single source.
+
+  | Action | viewer | member | admin | owner |
+  | --- | --- | --- | --- | --- |
+  | View projects, versions, compare, export | ✓ | ✓ | ✓ | ✓ |
+  | Import versions, test connections, check drift | | ✓ | ✓ | ✓ |
+  | Create and edit projects and environments | | | ✓ | ✓ |
+  | Invite members, change roles, remove members, view the audit log | | | ✓ | ✓ |
+
+  Nobody can assign the owner role or change the owner.
+- **Projects** contain **environments** and **schema versions**.
+  - An environment is a database target. Its URL is stored only encrypted; `connectionHint` is the redacted form.
+  - Importing introspects the environment's tracked schemas, read-only:
+    - The snapshot is stored as an artifact.
+    - A `schema_version` row is added, numbered per project under an advisory lock.
+    - An import identical to the latest version creates nothing.
 - **Pages:**
-  - `/`: the schemas and the saved snapshots.
-  - `/schema?ns=`: browse one schema.
-  - `/export?ns=`: export SQL.
-  - `/export/sql?ns=`: download the export SQL.
-  - `/compare?ns=&snapshot=`: compare the live schema with a saved snapshot.
-- **Server-side code:** all database access goes through `apps/web/lib/server.ts` (server-only).
-- **Saving:** the "Save snapshot" server action writes to the snapshot store (`apps/web/lib/snapshots.ts`), as immutable, checksum-verified files in `.local/snapshots`.
-- **Compare** shows `planMigration(saved, live)`: the migration from the snapshot to the current schema.
+  - `/projects`, `/projects/[project]`
+  - `/projects/[project]/environments/{new,[environment]}`
+  - `/projects/[project]/versions/[n]`, with `export.sql` and `snapshot.json` downloads
+  - `/projects/[project]/compare?from=&to=` between two versions, or `?from=&environment=` for drift
+  - `/settings/members`, `/settings/audit`
+- **Server modules (`apps/web/lib`):**
+  - `session.ts`: actor and permission guards
+  - `auth.ts`: Better Auth config
+  - `membership.ts`: the sign-up gate and invitations
+  - `members.ts`
+  - `projects.ts`: projects and environments
+  - `targets.ts`: the only module that decrypts and connects
+  - `versions.ts`
+  - `audit.ts`
+  - `secrets.ts`, `connections.ts`, `roles.ts`, `slugs.ts`
+  - `env.ts`, `db.ts`
+  - `actions.ts`: the server-action wrapper
 
-### Planned, not built yet
+## The metadata database
 
-See AGENTS.md "Suggested Repository Layout".
-
-- **The product dashboard:** authentication, organizations and projects, a metadata database through Prisma, entitlements. It may grow out of `apps/web`, but authorization comes first.
-- **`apps/cli`**
-- **`packages/storage`:** the artifact store. The viewer's snapshot store is its local precursor.
-- **`packages/contracts`**
-- **Schema-tool adapters:** Prisma Schema, SQL DDL.
+- **What it is:** PostgreSQL with Prisma 7. The schema is `prisma/schema.prisma`, migrations are in `prisma/migrations`, and the config is `prisma.config.ts`. The generated client goes to `apps/web/generated/prisma`.
+- **Tables:**
+  - Better Auth: `user`, `session`, `account`, `verification`, `organization`, `member`, `invitation`.
+  - Skematron: `installation`, `project`, `environment`, `schema_version`, `audit_event`.
+- **Artifacts** live outside the database, in `SKEMATRON_ARTIFACT_DIR`. Back up the database, the artifacts and `SKEMATRON_SECRET_KEY` together.
 
 ## Data flow
 
 ```text
-PostgreSQL database
+PostgreSQL database (an environment)
    │  introspectPostgres(session)      read-only transaction, pg_catalog only, always rolled back
    ▼
 SchemaSnapshot + unsupported[]         what was captured, and what was reported but not captured
    │  canonicalizeSnapshot / serializeSnapshot / snapshotChecksum
    ▼
-canonical JSON (format v1) + sha256    the identity of a schema version
-   │  planMigration(from, to)          pure; matches objects by name
+canonical JSON (format v1) + sha256    stored as an artifact; recorded as schema version N
+   │  planMigration(from, to)          pure; versions or live drift; matches objects by name
    ▼
 MigrationPlan                          ordered operations with risk and warnings, plus unsupported changes
    │  renderPostgresMigration(plan)    produces text; executes nothing
@@ -58,26 +88,33 @@ SQL statements + review script
 
 ## Boundaries
 
-- Core has no I/O and no dependencies. Checksums use Web Crypto, so core can run anywhere.
-- Adapters do not own connections. The caller passes a `PostgresSession`: any object with `query(text)`, such as a `pg.Client`. Connection policy (credentials, TLS, SSRF rules) therefore stays with the app that owns the connection; in the viewer, that is `lib/server.ts`.
-- The connection URL never reaches the browser. Pages see only a `source` label.
-- Edition, entitlement and billing logic never goes into core or adapters (see `business-model.md`).
-- The `boundaries.test.ts` file in each package enforces the packages' import rules.
+- **Core** has no I/O and no dependencies. Checksums use Web Crypto, so core can run anywhere.
+- **Adapters do not own connections.** The caller passes a `PostgresSession` (any object with `query(text)`, such as a `pg.Client`). In the dashboard, `lib/targets.ts` owns connection policy (decryption, timeouts, error messages).
+- **Connection URLs, passwords and decrypted secrets never reach the browser,** the HTML, logs, audit details or error messages.
+- **Edition, entitlement and billing logic** never goes into core, adapters or storage (see `business-model.md`).
+- **Import rules** are enforced by the `boundaries.test.ts` file in each package.
+
+### Planned, not built yet
+
+- **Hosted SaaS mode:** several organizations, an SSRF guard for user-supplied hosts, quotas, entitlements and billing.
+- **`apps/cli`,** with API tokens.
+- **Saved plans, review and approvals, then apply.**
+- **Schema-tool adapters:** Prisma Schema, SQL DDL.
+- **Docker Compose** packaging.
 
 ## Tooling
 
 - **TypeScript:**
   - Node 24 runs TypeScript directly through type stripping, so the packages have no build step. `tsc` only type-checks.
-  - Packages export `src/index.ts` directly.
-  - The web app is compiled by Next.js, which transpiles the workspace packages (`transpilePackages`).
+  - The web app is compiled by Next.js, which transpiles the workspace packages.
   - `pnpm typecheck` runs the root `tsc`, then `next typegen && tsc` for the app.
-- **Tests and the test database:**
-  - Tests use `node:test`.
-  - Integration tests need `SKEMATRON_TEST_DATABASE_URL`. `pnpm db:test:start` runs a disposable local PostgreSQL (`scripts/test-postgres.sh`).
-  - `pnpm db:test:seed [v1|v2]` loads `fixtures/v1.sql` or `fixtures/v2.sql` as a `demo` schema into that test database.
-- **Trying it by hand:**
-  - `packages/adapters/examples/export-schema.ts` (`pnpm example:export`) shows the library in use: introspect, checksum, then export DDL. It sits outside `src/` and is not part of the package API.
-  - `pnpm web` runs the viewer's dev server on port 3100.
+- **The local database:** `pnpm db:start` (`scripts/local-postgres.sh`) runs a disposable local PostgreSQL in `.local/`.
+  - It holds the `skematron` database (metadata) and `skematron_test` (tests and the `demo` schema).
+  - It adds any missing `.env` keys.
+  - `pnpm db:seed [v1|v2]` loads the demo schema.
+  - `pnpm db:migrate`, `db:deploy` and `db:generate` wrap Prisma.
+- **Tests:** `node:test`, including metadata integration tests in a throwaway `skematron_it_*` database.
+- **Example:** `packages/adapters/examples/export-schema.ts` (`pnpm example:export`) uses the libraries without the dashboard.
 - **Docs tooling:**
   - `scripts/sync-ai.ts` copies `ai/skills` into `.claude/skills` and `.codex/skills`.
   - `scripts/check-docs.ts` is the documentation gate that `pnpm check` runs.

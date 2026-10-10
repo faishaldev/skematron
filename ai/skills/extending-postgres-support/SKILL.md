@@ -39,7 +39,7 @@ Read `ai/rules/core.md`, `ai/rules/adapters.md` and `ai/rules/testing.md` first.
    - Extend `introspect.test.ts` with fake rows.
 7. **Integration.**
    - Add the object to `fixtures/v1.sql`. If the planner can alter it, add a change to `fixtures/v2.sql`.
-   - Run `pnpm db:test:start`, then `pnpm test`. Both round trips must pass.
+   - Run `pnpm db:start`, then `pnpm test`. Both round trips must pass.
 8. **Document.**
    - Update `postgresql-support.md` (captured, unsupported, risks).
    - Update `snapshot-format.md` if the shape changed.

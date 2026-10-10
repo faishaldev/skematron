@@ -5,7 +5,7 @@
 //   pnpm -s example:export demo > demo.sql       (save the output)
 //
 // Connects to DATABASE_URL if set, otherwise to SKEMATRON_TEST_DATABASE_URL from .env
-// (the local test database started by `pnpm db:test:start`). Never prints the URL.
+// (the local test database started by `pnpm db:start`). Never prints the URL.
 import pg from "pg";
 import {
   emptySnapshot,
@@ -17,7 +17,7 @@ import { introspectPostgres, renderPostgresMigration } from "../src/index.ts";
 const url = process.env.DATABASE_URL ?? process.env.SKEMATRON_TEST_DATABASE_URL;
 if (url === undefined || url === "") {
   console.error(
-    "No database to read. Set DATABASE_URL, or run `pnpm db:test:start` to start the local test database.",
+    "No database to read. Set DATABASE_URL, or run `pnpm db:start` to start the local test database.",
   );
   process.exit(1);
 }
@@ -33,7 +33,7 @@ try {
   const code = (error as NodeJS.ErrnoException).code;
   console.error(
     code === "ENOENT" || code === "ECONNREFUSED"
-      ? "Cannot reach the database. For the local test database, run `pnpm db:test:start` first."
+      ? "Cannot reach the database. For the local test database, run `pnpm db:start` first."
       : `Cannot connect to the database: ${(error as Error).message}`,
   );
   process.exit(1);
