@@ -11,6 +11,7 @@ describe("requiresChangelog", () => {
     for (const path of [
       "packages/core/src/plan.ts",
       "packages/adapters/src/postgres/introspect.ts",
+      "packages/adapters/examples/export-schema.ts",
       "apps/cli/src/main.ts",
       "scripts/sync-ai.ts",
       "scripts/test-postgres.sh",

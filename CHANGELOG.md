@@ -28,6 +28,9 @@ All notable changes to Skematron are recorded here. The format follows [Keep a C
   - Unit tests for canonicalization, planning, rendering and introspection.
   - PostgreSQL integration tests: exported DDL recreates an identical checksum, and a v1 → v2 migration reaches an equivalent schema.
 - **Test database.** `pnpm db:test:start` / `pnpm db:test:stop` run a disposable, socket-only PostgreSQL cluster in `.local/` for integration tests.
+- **Try it in two commands.**
+  - `pnpm db:test:seed` loads a sample `demo` schema into the test database.
+  - `pnpm example:export [schema…]` reads a schema (read-only) and prints its checksum, the objects it could not capture, and the SQL that recreates it. Set `DATABASE_URL` to read your own database instead.
 - **AI docs** for Claude Code, Codex and other agents:
   - rules in `ai/rules/`
   - skills in `ai/skills/` (`documenting-changes`, `extending-postgres-support`), copied to `.claude/skills` and `.codex/skills` by `pnpm sync:ai`

@@ -8,6 +8,7 @@ Read before changing anything in `packages/adapters/`. These rules add to AGENTS
 - Database drivers (`pg`) are devDependencies, used by integration tests only. Callers pass in a session (`PostgresSession`), so the adapter never owns a connection.
 - No edition, entitlement, billing, credential-storage or connection-policy (SSRF) logic. That belongs to the app that owns the connection.
 - Keep schema-tool adapters (Prisma Schema, SQL DDL) separate from database adapters (PostgreSQL) when they are added.
+- `examples/` is outside the package API and may use `pg`. Examples must stay read-only against any database the user provides, and must never print connection URLs.
 
 ## Introspection is read-only
 

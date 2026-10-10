@@ -22,7 +22,9 @@ export function requiresChangelog(path: string): boolean {
     return false;
   if (ROOT_CONFIG.has(path)) return true;
   if (/^packages\/[^/]+\/package\.json$/.test(path)) return true;
-  return /^(packages\/[^/]+\/src|apps\/[^/]+\/src|scripts)\//.test(path);
+  return /^(packages\/[^/]+\/(src|examples)|apps\/[^/]+\/src|scripts)\//.test(
+    path,
+  );
 }
 
 /** Changed paths that need a changelog entry, or none if CHANGELOG.md itself changed. */

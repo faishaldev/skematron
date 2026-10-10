@@ -16,17 +16,37 @@ There is no CLI, web app or apply step yet, and nothing in this repository write
 
 ## Development
 
-Requires Node 24 (`nvm use`) and pnpm 10.
+Requires Node 24 (`nvm use`) and pnpm 10. Always use `pnpm`, never `npm install`: npm creates a stray `package-lock.json` and mixes up `node_modules`. Run commands from the repository root.
+
+Install dependencies, then run the type check, format check, tests and documentation gate:
 
 ```sh
 pnpm install
-pnpm check            # typecheck, format check, tests, documentation gate
+pnpm check
 ```
 
-The PostgreSQL integration tests run only when `SKEMATRON_TEST_DATABASE_URL` is set. The easiest way is a disposable local cluster. It needs PostgreSQL 14+ server binaries, for example `brew install postgresql@14`. It has its own data directory under `.local/`, with no TCP and an owner-only socket:
+### See it work
+
+1. Start the throwaway test database.
+2. Load a sample `demo` schema into it.
+3. Read the schema and print the SQL that recreates it.
 
 ```sh
-pnpm db:test:start    # first run initializes the cluster, creates skematron_test and writes .env
+pnpm db:test:start
+pnpm db:test:seed
+pnpm example:export demo
+```
+
+The output is SQL with comments: the snapshot checksum, the objects that were not captured, and the statements that recreate the schema, each marked safe, caution or destructive. To save it, run `pnpm -s example:export demo > demo.sql`.
+
+To read your own database instead, run `DATABASE_URL='postgresql://user:password@localhost:5432/mydb' pnpm example:export public`. It only reads, inside a transaction that is always rolled back, and never prints the URL.
+
+The PostgreSQL integration tests run only when `SKEMATRON_TEST_DATABASE_URL` is set. The easiest way is a disposable local cluster. It needs PostgreSQL 14+ server binaries, for example `brew install postgresql@14`. It has its own data directory under `.local/`, with no TCP and an owner-only socket.
+
+`pnpm db:test:start` initializes the cluster on its first run, creates `skematron_test` and writes `.env`:
+
+```sh
+pnpm db:test:start
 pnpm test
 pnpm db:test:stop
 ```

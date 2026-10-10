@@ -192,6 +192,10 @@ Not built yet: the CLI, the web app, the metadata database, artifact storage, ap
 - PostgreSQL integration tests run only when `SKEMATRON_TEST_DATABASE_URL` is set (`.env`, git-ignored).
   - `pnpm db:test:start` starts a disposable, socket-only local cluster in `.local/` and writes `.env`. `pnpm db:test:stop` stops it.
   - Never point the URL at a shared or production database.
+- Try it by hand:
+  - `pnpm db:test:seed` loads a sample `demo` schema into the test database. It writes to the test cluster only.
+  - `pnpm example:export [schema…]` runs `packages/adapters/examples/export-schema.ts`. It is read-only, and uses `DATABASE_URL` or else the test database.
+- Use pnpm only. `npm install` creates `package-lock.json` and mixes up `node_modules`.
 
 ## AI Docs: Rules, Skills, Knowledges
 

@@ -26,6 +26,9 @@ Things that surprised someone or cost time, and what to do about them. Add new o
 - **initdb with macOS's bare `UTF-8` locale** warns that it found no text search configuration. The test cluster uses `--locale=C`.
 - **Unix socket paths are limited to about 103 bytes on macOS.** Keep the test cluster directory short. The current path is about 77 bytes.
 - **Prettier skips Markdown on purpose** (`.prettierignore`), so hand-written docs keep their formatting.
+- **`npm install` breaks the pnpm layout.** It writes `package-lock.json` and copies packages into the root `node_modules`. To fix it, delete `package-lock.json` and every `node_modules`, then run `pnpm install --frozen-lockfile`.
+- **No inline `# comments` in copy-paste command blocks.** Interactive zsh does not treat `#` as a comment unless `setopt interactivecomments` is on, so `pnpm example:export demo  # read it` passes `#`, `read`, `it` as arguments. Explain commands in prose and keep the blocks to commands only.
+- **Do not hand people multi-line `node -e '…'` snippets.** Pasting them into zsh fails in confusing ways: a partial paste runs JavaScript as shell (`parse error near '}'`), and a `cd` at the top runs from the wrong directory. Give them a script and a `pnpm` command instead, like `pnpm example:export`.
 
 ## Safety
 

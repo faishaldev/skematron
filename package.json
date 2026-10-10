@@ -15,7 +15,9 @@
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "db:test:start": "sh scripts/test-postgres.sh start",
+    "db:test:seed": "sh scripts/test-postgres.sh seed",
     "db:test:stop": "sh scripts/test-postgres.sh stop",
+    "example:export": "node --env-file-if-exists=.env packages/adapters/examples/export-schema.ts",
     "sync:ai": "node scripts/sync-ai.ts",
     "check:docs": "node scripts/check-docs.ts",
     "check": "pnpm typecheck && pnpm format:check && pnpm test && pnpm check:docs"

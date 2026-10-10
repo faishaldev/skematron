@@ -51,5 +51,7 @@ Nothing in this flow writes to a user database. Applying a plan will be a separa
 - Node 24 runs TypeScript directly through type stripping, so there is no build step. `tsc` only type-checks.
 - Packages export `src/index.ts` directly.
 - Tests use `node:test`. Integration tests need `SKEMATRON_TEST_DATABASE_URL`; `pnpm db:test:start` runs a disposable local PostgreSQL (`scripts/test-postgres.sh`).
+- `pnpm db:test:seed` loads `fixtures/v1.sql` as a `demo` schema into that test database.
+- `packages/adapters/examples/export-schema.ts` (`pnpm example:export`) shows the library in use: introspect, checksum, then export DDL. It stands in for the planned CLI, sits outside `src/`, and is not part of the package API.
 - `scripts/sync-ai.ts` copies `ai/skills` into `.claude/skills` and `.codex/skills`.
 - `scripts/check-docs.ts` is the documentation gate that `pnpm check` runs.
