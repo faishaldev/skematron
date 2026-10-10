@@ -1,6 +1,10 @@
 node_modules/
 coverage/
-# Disposable local services (scripts/test-postgres.sh)
+# Next.js build output and generated types (apps/web)
+.next/
+next-env.d.ts
+*.tsbuildinfo
+# Disposable local services and data (test database, saved snapshots)
 .local/
 .env
 .env.*

@@ -28,6 +28,12 @@ All notable changes to Skematron are recorded here. The format follows [Keep a C
   - Unit tests for canonicalization, planning, rendering and introspection.
   - PostgreSQL integration tests: exported DDL recreates an identical checksum, and a v1 → v2 migration reaches an equivalent schema.
 - **Test database.** `pnpm db:test:start` / `pnpm db:test:stop` run a disposable, socket-only PostgreSQL cluster in `.local/` for integration tests.
+- **Local web viewer (`apps/web`, `pnpm web`).** A read-only Next.js 16 app on <http://127.0.0.1:3100> with no login, for your machine only.
+  - Browse a schema's tables, keys, indexes, enums, sequences and uncaptured objects.
+  - View or download its export SQL.
+  - Save immutable, checksum-verified snapshots to `.local/snapshots`.
+  - Compare the live schema with a saved snapshot as a risk-rated migration.
+- **`pnpm db:test:seed v2`** loads the changed sample schema, so you can try Compare.
 - **Try it in two commands.**
   - `pnpm db:test:seed` loads a sample `demo` schema into the test database.
   - `pnpm example:export [schema…]` reads a schema (read-only) and prints its checksum, the objects it could not capture, and the SQL that recreates it. Set `DATABASE_URL` to read your own database instead.

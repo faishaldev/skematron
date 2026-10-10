@@ -12,7 +12,7 @@ A self-hostable control plane for database schemas and migrations. It imports, v
   - Read-only PostgreSQL 14+ introspection that reports everything it does not capture.
   - SQL rendering of plans into a reviewable script.
 
-There is no CLI, web app or apply step yet, and nothing in this repository writes to your databases. See `AGENTS.md` for the planned product.
+There is also a local, read-only web viewer (`apps/web`) for trying it in a browser. There is no CLI, product dashboard or apply step yet, and nothing in this repository writes to your databases. See `AGENTS.md` for the planned product.
 
 ## Development
 
@@ -40,6 +40,29 @@ pnpm example:export demo
 The output is SQL with comments: the snapshot checksum, the objects that were not captured, and the statements that recreate the schema, each marked safe, caution or destructive. To save it, run `pnpm -s example:export demo > demo.sql`.
 
 To read your own database instead, run `DATABASE_URL='postgresql://user:password@localhost:5432/mydb' pnpm example:export public`. It only reads, inside a transaction that is always rolled back, and never prints the URL.
+
+### Local web viewer
+
+A small, read-only viewer for your machine. It is not the product dashboard: it has no login, listens on `127.0.0.1` only, and must never be deployed. Start the test database, load the sample schema and start the viewer:
+
+```sh
+pnpm db:test:start
+pnpm db:test:seed
+pnpm web
+```
+
+Open <http://127.0.0.1:3100>. You can browse the `demo` schema and its export SQL there. To see a migration:
+
+1. Click **Save snapshot** on `demo`.
+2. In a second terminal, load the changed version of the schema:
+
+   ```sh
+   pnpm db:test:seed v2
+   ```
+
+3. Back in the browser, click **Compare**. You get the migration from the snapshot to the current schema, with each statement marked safe, caution or destructive.
+
+Snapshots are saved as checksummed files in `.local/snapshots`. The viewer reads `DATABASE_URL` if it is set when you run `pnpm web`, and otherwise the test database from `.env`. The URL never reaches the browser.
 
 The PostgreSQL integration tests run only when `SKEMATRON_TEST_DATABASE_URL` is set. The easiest way is a disposable local cluster. It needs PostgreSQL 14+ server binaries, for example `brew install postgresql@14`. It has its own data directory under `.local/`, with no TCP and an owner-only socket.
 

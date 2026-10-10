@@ -5,6 +5,7 @@
 #
 #   sh scripts/test-postgres.sh start   # first run initializes; creates skematron_test; writes .env if missing
 #   sh scripts/test-postgres.sh seed    # (re)creates a sample "demo" schema in skematron_test
+#   sh scripts/test-postgres.sh seed v2 # the same, from the changed version (to try Compare)
 #   sh scripts/test-postgres.sh stop
 #
 # Requires PostgreSQL 14+ server binaries (initdb, pg_ctl) on PATH, e.g. from Homebrew.
@@ -40,14 +41,22 @@ case "${1:-}" in
       echo "Test PostgreSQL is not running. Run: pnpm db:test:start" >&2
       exit 1
     fi
-    fixture="$root/packages/adapters/src/postgres/fixtures/v1.sql"
+    version="${2:-v1}"
+    case "$version" in
+      v1 | v2) ;;
+      *)
+        echo "usage: sh scripts/test-postgres.sh seed [v1|v2]" >&2
+        exit 64
+        ;;
+    esac
+    fixture="$root/packages/adapters/src/postgres/fixtures/$version.sql"
     {
       echo "SET client_min_messages = warning;"
       echo "DROP SCHEMA IF EXISTS demo CASCADE;"
       echo "CREATE SCHEMA demo;"
       sed 's/__SCHEMA__/demo/g' "$fixture"
     } | psql -h "$dir" -p "$port" -d skematron_test -v ON_ERROR_STOP=1 -q
-    echo "Loaded a sample \"demo\" schema into skematron_test (from fixtures/v1.sql)."
+    echo "Loaded a sample \"demo\" schema into skematron_test (from fixtures/$version.sql)."
     ;;
   stop)
     pg_ctl --pgdata="$dir/data" --mode=fast stop

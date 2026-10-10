@@ -13,6 +13,8 @@ describe("requiresChangelog", () => {
       "packages/adapters/src/postgres/introspect.ts",
       "packages/adapters/examples/export-schema.ts",
       "apps/cli/src/main.ts",
+      "apps/web/app/page.tsx",
+      "apps/web/next.config.ts",
       "scripts/sync-ai.ts",
       "scripts/test-postgres.sh",
       "package.json",
@@ -26,6 +28,8 @@ describe("requiresChangelog", () => {
   it("does not require an entry for tests, fixtures, docs or lockfiles", () => {
     for (const path of [
       "packages/core/src/plan.test.ts",
+      "apps/web/lib/snapshots.test.ts",
+      "apps/web/AGENTS.md",
       "packages/adapters/src/postgres/fixtures/v1.sql",
       "ai/knowledges/gotchas.md",
       "README.md",

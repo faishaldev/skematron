@@ -170,12 +170,13 @@ Trial duration, quota, grace period, and entitlements must be configuration/poli
 
 ## Current State
 
-Pre-alpha, libraries only. What exists:
+Pre-alpha. What exists:
 
 - `packages/core` (`@skematron/core`): snapshot format v1, canonical JSON with SHA-256 checksums, and `planMigration` (ordered operations with risk levels, warnings and unsupported changes).
 - `packages/adapters` (`@skematron/adapters`): read-only PostgreSQL 14+ introspection (`introspectPostgres`) and SQL rendering (`renderPostgresMigration`).
+- `apps/web` (`@skematron/web`): a **local, read-only schema viewer**, not the product dashboard. It runs on Next.js 16, has no login, and binds to `127.0.0.1` only. It lets you browse a schema, export its SQL, save snapshots to `.local/snapshots`, and compare the live schema with a saved snapshot.
 
-Not built yet: the CLI, the web app, the metadata database, artifact storage, apply/execution, Prisma and SQL DDL import, and Docker Compose. The CLI command names above are still plans. See `ai/knowledges/architecture.md`.
+Not built yet: the real dashboard (authentication, organizations, projects), the CLI, the metadata database, artifact storage beyond the viewer's local snapshot files, apply/execution, Prisma and SQL DDL import, and Docker Compose. The CLI command names above are still plans. See `ai/knowledges/architecture.md`.
 
 ## Development
 
@@ -193,8 +194,9 @@ Not built yet: the CLI, the web app, the metadata database, artifact storage, ap
   - `pnpm db:test:start` starts a disposable, socket-only local cluster in `.local/` and writes `.env`. `pnpm db:test:stop` stops it.
   - Never point the URL at a shared or production database.
 - Try it by hand:
-  - `pnpm db:test:seed` loads a sample `demo` schema into the test database. It writes to the test cluster only.
+  - `pnpm db:test:seed [v1|v2]` loads a sample `demo` schema into the test database. It writes to the test cluster only. Loading `v2` afterwards gives Compare something to show.
   - `pnpm example:export [schema…]` runs `packages/adapters/examples/export-schema.ts`. It is read-only, and uses `DATABASE_URL` or else the test database.
+  - `pnpm web` starts the local viewer at <http://127.0.0.1:3100>. It uses `DATABASE_URL` or else the test database from `.env`.
 - Use pnpm only. `npm install` creates `package-lock.json` and mixes up `node_modules`.
 
 ## AI Docs: Rules, Skills, Knowledges
@@ -205,6 +207,7 @@ All AI-facing documentation lives in `ai/`. Before changing code, read this file
 | --- | --- |
 | `packages/core/**` | `ai/rules/core.md` |
 | `packages/adapters/**` | `ai/rules/adapters.md` |
+| `apps/web/**` | `ai/rules/web.md` |
 | Tests, fixtures, test databases | `ai/rules/testing.md` |
 | Every change | `ai/rules/documentation.md` |
 

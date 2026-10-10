@@ -98,3 +98,16 @@ An append-only log of design decisions.
 - **Consequences.**
   - No credentials are handled and the existing server is untouched.
   - Docker Compose (AGENTS.md) remains the plan for the app and self-hosting, and can replace this script later.
+
+## D11: A local, read-only schema viewer as the first web app (2026-10-10, accepted)
+
+- **Context.** The owner wanted to try Skematron in a browser. The product dashboard needs authentication, organizations, a metadata database and storage, which is too much for a first step. AGENTS.md says not to build enterprise features before the core workflow works.
+- **Decision.**
+  - `apps/web` runs on Next.js 16 (App Router, Turbopack) with React 19.
+  - It is local only: it binds to `127.0.0.1`, has no login, and is read-only toward databases. The connection URL comes from server-side environment only.
+  - Pages: browse, export SQL, save snapshots, and compare live against a saved snapshot.
+  - Snapshots are immutable files in `.local/snapshots`, each with a canonical `<id>.json` and a `<id>.meta.json`, verified by checksum when loaded. There is no metadata database yet.
+  - `.ts` import extensions and erasable syntax stay the rule in the app.
+- **Consequences.**
+  - The viewer must never be deployed or exposed. The real dashboard needs authentication and per-project authorization first (AGENTS.md "Security").
+  - The snapshot store is the local precursor of `packages/storage`; extract it when the CLI or the dashboard needs it.

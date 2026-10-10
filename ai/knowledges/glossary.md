@@ -17,6 +17,7 @@
 **Operation.** One step of a plan, such as `add-column` or `drop-table`. Each operation has a risk level and warnings, and renders to one SQL statement.
 
 **Risk.**
+
 - `safe`: not expected to fail or lose data.
 - `caution`: may fail on existing data or take heavy locks, but loses no data.
 - `destructive`: may permanently lose data.
@@ -32,5 +33,7 @@
 **Schema-tool adapter** (planned). Imports or exports a schema format, such as Prisma Schema or SQL DDL.
 
 **Intended vs. observed state.** The intended state is the snapshot a team wants a database to have. The observed state is what introspection reads from that database now. Skematron keeps the two separate (AGENTS.md).
+
+**Saved snapshot.** A snapshot that the local viewer stored as an immutable file in `.local/snapshots`, with metadata (schema, time, checksum, source). It is verified against its checksum whenever it is loaded. "Compare" plans from a saved snapshot to the live schema.
 
 **Export (DDL).** The SQL that creates a snapshot from nothing: `renderPostgresMigration(planMigration(emptySnapshot("postgresql"), snapshot))`.

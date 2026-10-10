@@ -1,0 +1,28 @@
+{
+  "name": "@skematron/web",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Local schema viewer: browse a PostgreSQL schema, export it, save snapshots and compare against them.",
+  "license": "UNLICENSED",
+  "type": "module",
+  "scripts": {
+    "dev": "next dev --hostname 127.0.0.1 --port 3100",
+    "build": "next build",
+    "start": "next start --hostname 127.0.0.1 --port 3100",
+    "typecheck": "next typegen && tsc --noEmit"
+  },
+  "dependencies": {
+    "@skematron/adapters": "workspace:*",
+    "@skematron/core": "workspace:*",
+    "next": "^16.4.0",
+    "pg": "^8.23.1",
+    "react": "^19.3.0",
+    "react-dom": "^19.3.0",
+    "server-only": "^0.0.1"
+  },
+  "devDependencies": {
+    "@types/pg": "^8.23.1",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0"
+  }
+}

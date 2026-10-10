@@ -5,6 +5,7 @@
 - Tests live next to the code: `*.test.ts` for unit tests, `*.integration.test.ts` for tests that need PostgreSQL.
 - Use `node:test` and `node:assert/strict`. Do not add another test framework.
 - Build snapshots with the helpers in `@skematron/core/testing`: `snapshot`, `namespace`, `table`, `column`, `foreignKey`, `sequence`.
+- Web app logic is tested in `apps/web/lib/*.test.ts` with `node:test`, using a temporary directory and never `.local/snapshots`. When you change pages, also check them in a running dev server.
 - SQL fixtures live in `packages/adapters/src/postgres/fixtures/` and use `__SCHEMA__` for the schema name.
 
 ## Integration tests and databases

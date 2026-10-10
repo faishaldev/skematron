@@ -10,8 +10,9 @@
     "node": ">=24"
   },
   "scripts": {
-    "typecheck": "tsc",
-    "test": "node --env-file-if-exists=.env --test \"packages/*/src/**/*.test.ts\" \"scripts/**/*.test.ts\"",
+    "typecheck": "tsc && pnpm --filter @skematron/web typecheck",
+    "test": "node --env-file-if-exists=.env --test \"packages/*/src/**/*.test.ts\" \"apps/*/lib/**/*.test.ts\" \"scripts/**/*.test.ts\"",
+    "web": "pnpm --filter @skematron/web dev",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "db:test:start": "sh scripts/test-postgres.sh start",

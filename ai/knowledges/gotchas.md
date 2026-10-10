@@ -30,6 +30,15 @@ Things that surprised someone or cost time, and what to do about them. Add new o
 - **No inline `# comments` in copy-paste command blocks.** Interactive zsh does not treat `#` as a comment unless `setopt interactivecomments` is on, so `pnpm example:export demo  # read it` passes `#`, `read`, `it` as arguments. Explain commands in prose and keep the blocks to commands only.
 - **Do not hand people multi-line `node -e '…'` snippets.** Pasting them into zsh fails in confusing ways: a partial paste runs JavaScript as shell (`parse error near '}'`), and a `cd` at the top runs from the wrong directory. Give them a script and a `pnpm` command instead, like `pnpm example:export`.
 
+## Next.js (apps/web)
+
+- **`next dev` writes `apps/web/AGENTS.md`** (Next 16.4 "agent rules"). It tells agents to read the version-matched docs in `apps/web/node_modules/next/dist/docs/` first. Commit the file; deleting it only brings it back.
+- **Next rewrites `apps/web/tsconfig.json`** on `next dev`, `next build` and `next typegen`. It adds `allowJs` and the mandatory `esModuleInterop`. Keep those settings, or every run produces a diff.
+- **`next-env.d.ts` and the route types are generated** and git-ignored. `pnpm typecheck` runs `next typegen` before `tsc` so a fresh clone type-checks.
+- **The repository `.env` is not in the app directory.** Next only loads `.env` from `apps/web`, so `next.config.ts` calls `process.loadEnvFile` on the root `.env`. Variables already set, such as `DATABASE_URL`, win.
+- **Server actions reject a mismatched `Origin`** with a 500 and "Invalid Server Actions request". To post a form with curl, send `Origin: http://127.0.0.1:3100` and the hidden `$ACTION_ID_…` field taken from the page.
+- **Page HTML contains every string twice**: once in the markup and once in the embedded React Server Components payload. Halve counts when grepping HTML in tests.
+
 ## Safety
 
 - **Rendered SQL contains raw fragments** from the snapshot: types, defaults, expressions, index definitions. Review it before executing. Never execute a plan built from a snapshot you did not produce or review.
