@@ -1,0 +1,12 @@
+{
+  "name": "@skematron/core",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Framework-independent schema snapshots, canonicalization, checksums and migration planning.",
+  "license": "UNLICENSED",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./testing": "./src/testing.ts"
+  }
+}

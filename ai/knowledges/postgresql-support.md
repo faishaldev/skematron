@@ -1,0 +1,101 @@
+# PostgreSQL support
+
+Applies to the `@skematron/adapters` PostgreSQL adapter and the core planner, as of 2026-10-10.
+
+## Versions
+
+- PostgreSQL 14 or newer is required. Older servers are rejected with a clear error.
+- Tested on 14.20.
+- Version-specific behavior:
+  - 15 and later: `UNIQUE NULLS NOT DISTINCT` is captured.
+  - 18 and later: virtual generated columns are captured, and NOT NULL constraint rows (`contype = 'n'`) are folded into column nullability.
+
+## How introspection runs
+
+The caller passes a dedicated session. `introspectPostgres` then:
+
+1. Opens `BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY`.
+2. Pins, for this transaction only: `search_path = ''`, `statement_timeout` (30 s by default), `standard_conforming_strings = on`, `quote_all_identifiers = off`, `DateStyle = 'ISO, YMD'`, `IntervalStyle = postgres`, `TimeZone = UTC`, `extra_float_digits = 1`, `bytea_output = hex`.
+3. Runs the catalog queries in `queries.ts`.
+4. Always rolls back.
+
+It reads `pg_catalog` only, never table rows.
+
+By default every user namespace is captured; `namespaces: [...]` limits capture to those. Excluded:
+
+- `information_schema` and `pg_*` namespaces
+- namespaces and objects owned by extensions
+
+## Captured
+
+| Object | Properties |
+| --- | --- |
+| Namespace | name |
+| Table (ordinary, permanent, not partitioned, not a partition or inheritance child) | name, comment |
+| Column | name, ordinal position, type (`format_type`), nullability, default, identity (always / by default), generated expression (stored / virtual), explicit collation, comment |
+| Primary key | name, columns, deferrability |
+| Unique constraint | name, columns, NULLS NOT DISTINCT, deferrability |
+| Check constraint | name, expression (`pg_get_expr`) |
+| Foreign key | name, columns, referenced table and columns, ON UPDATE / ON DELETE, MATCH FULL, deferrability |
+| Index (not backing a constraint) | name, unique, full definition (`pg_get_indexdef`) |
+| Enum type | name, values in sort order |
+| Sequence | name, data type, start, increment, min, max, cache, cycle, owning column (serial) |
+
+Sequences that belong to identity columns are omitted; the column's `identity` implies them.
+
+## Reported as unsupported (not captured)
+
+Introspection returns these in `unsupported` as `{ kind, namespace, table, name }`:
+
+| kind | Meaning |
+| --- | --- |
+| `view`, `materialized-view`, `foreign-table`, `composite-type` | Non-table relations |
+| `partitioned-table`, `partition`, `inherited-table`, `unlogged-table` | Tables Skematron cannot model yet |
+| `row-level-security` | RLS is enabled on a captured table. The flag is not captured. |
+| `policy`, `trigger`, `rule` | Table-level objects |
+| `function`, `procedure`, `aggregate`, `window-function` | Routines |
+| `domain`, `range-type`, `base-type`, `collation`, `extension` | Types and other objects |
+| `exclusion-constraint`, `check-no-inherit`, `foreign-key-set-columns` | Constraints the model cannot represent |
+| `invalid-index` | An index left invalid, for example by a failed `CREATE INDEX CONCURRENTLY` |
+| `sequence-of-unsupported-table` | A serial sequence owned by a table that is not captured |
+| `relation-kind-<x>`, `constraint-type-<x>` | A catalog kind this version does not recognize |
+
+## Not inspected at all
+
+Neither captured nor reported:
+
+- Roles, ownership and grants.
+- Tablespaces, storage parameters, column statistics targets.
+- Database-wide objects: event triggers, publications, subscriptions, foreign servers.
+- Operators, operator classes, text search objects, extended statistics, casts.
+- Identity sequence options.
+- Constraint validation state (`NOT VALID`).
+
+Treat these as limitations, not guarantees.
+
+## Planner behavior and risk
+
+| Operation | Risk | Notes |
+| --- | --- | --- |
+| Create namespace, enum, sequence or table; add a nullable column; drop NOT NULL; set or drop a default; change or drop identity; drop an index or constraint; comments; add an enum value | safe | A new enum value cannot be used in the same transaction that adds it. |
+| SET NOT NULL; add a NOT NULL column without a default; add PK, unique, check or FK, or create an index, on an existing table; add identity to an existing column; change a sequence's type or range | caution | May fail on existing data or block writes. The warnings suggest NOT VALID or CONCURRENTLY where relevant. |
+| Drop a table, column, namespace, sequence or enum; change a column's type or collation | destructive | Type changes have no USING clause. Add one during review if needed. |
+
+Known limitations:
+
+- **Matching:** objects are matched by name, so a rename appears as a drop plus a create.
+- **Column position** is ignored, because PostgreSQL cannot reorder columns.
+- **Recreation:** changed constraints and indexes are dropped and re-created (no CONCURRENTLY).
+- **Foreign keys** that depend on a re-created key, or whose columns change type, are dropped and re-added around the change.
+- **Reported as unsupported**, so the plan is incomplete:
+  - enum values that were removed or reordered
+  - any change to a generated column
+- **Uncaptured dependents:** objects that aren't captured, such as views, can make drops or type changes fail at apply time. That fails safely, but review dependents first.
+
+## Rendering
+
+- Every identifier is quoted. Literals follow `quote_literal`: values with backslashes become `E''` strings.
+- Snapshot fragments are inserted verbatim.
+- `CREATE SCHEMA IF NOT EXISTS` lets exported DDL run on databases that already have the namespace, such as `public`.
+- `CASCADE` is never rendered.
+- The script has no BEGIN/COMMIT. Apply statements one by one, or wrap them yourself once you have checked the enum caveat above.

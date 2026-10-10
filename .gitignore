@@ -1,0 +1,9 @@
+node_modules/
+coverage/
+# Disposable local services (scripts/test-postgres.sh)
+.local/
+.env
+.env.*
+!.env.example
+*.log
+.DS_Store

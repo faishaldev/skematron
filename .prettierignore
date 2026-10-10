@@ -1,0 +1,3 @@
+# Markdown docs (AGENTS.md, ai/, README, CHANGELOG) are written by hand; keep their formatting.
+*.md
+pnpm-lock.yaml
