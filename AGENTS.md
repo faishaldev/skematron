@@ -181,8 +181,11 @@ Pre-alpha. What exists:
   - Projects, and environments whose connection URLs are encrypted.
   - Versions are immutable and checksummed, imported read-only from an environment or from a `schema.prisma` (through the Prisma CLI and a shadow database).
   - Compare versions, check drift, export SQL or JSON.
-  - A schema editor for projects whose schema source is "dashboard": add tables, columns, indexes and foreign keys in a private draft, checked by PostgreSQL in a shadow database, then save it as a version.
-  - Migrations between versions: guided questions instead of SQL, immutable revisions checked in a shadow database (`SKEMATRON_SHADOW_DATABASE_URL`), and four-eyes review (an admin or owner who did not write it approves).
+  - Main and branches:
+    - Main is the line of immutable versions. After the baseline (v1), it changes only by merging a branch.
+    - A branch is a shared, proposed change. Its content comes from the schema editor ("dashboard" projects) or from `schema.prisma` uploads ("code" projects).
+    - Each branch is planned with guided questions instead of SQL and test-run in a shadow database (`SKEMATRON_SHADOW_DATABASE_URL`).
+    - It is reviewed four-eyes: an admin or owner who did not work on it approves. Then it is merged, or closed without a trace on main.
   - An audit log.
 
 Not built yet: applying migrations to environments (Phase 1b) and production protection, hosted multi-tenant SaaS mode (SSRF guard, quotas, billing), the CLI and API tokens, SQL DDL import, multi-file Prisma schemas and Prisma migration history import, email delivery, and Docker Compose. The CLI command names above are still plans. See `ai/knowledges/architecture.md` and `docs/self-hosting.md`.

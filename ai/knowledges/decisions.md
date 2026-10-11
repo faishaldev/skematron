@@ -230,3 +230,24 @@ An append-only log of design decisions.
   - Versions from the editor are interchangeable with imported ones, so drift checks and migrations work on them unchanged. A NOT NULL column added to an existing table leads to a backfill question in the migration.
   - The editor needs the shadow database.
   - Not yet supported in the editor: dropping or renaming objects, enums, check constraints, comments, and exporting a `schema.prisma` for dashboard projects.
+
+## D22: Changes go through branches; main grows only by merging (2026-10-11, accepted; supersedes D21's drafts and D20's version-to-version migrations)
+
+- **Context.** With D20 and D21, saving the editor's draft or importing a schema immediately added the next version, and migrations were created between any two versions. Teams expect what git gives them instead: work on a change separately, get it reviewed, and only then make it part of the agreed schema. An abandoned change should leave no trace on the main line.
+- **Decision.**
+  - **Main** is the line of immutable versions. Its first version (the baseline) comes from a `schema.prisma` import or the first environment import. After that, main only grows by merging a branch.
+  - **A branch** (`branch` table) has a base (the latest version on main when it started) and a head (a snapshot that changes).
+    - It is shared: the team sees it and members can change it.
+    - Its head comes from the schema editor ("dashboard" projects) or from `schema.prisma` uploads ("code" projects). Environment imports that differ from main become a new branch, `from-<environment>`.
+    - Every head change is checked against `updatedAt`, so concurrent edits never overwrite each other. It also sends the review back to draft.
+  - **A migration** is now the review of one branch. Each test run is an immutable revision that records the head it planned towards (`toChecksum`). A test run counts only if it was made after the branch's last change.
+  - **Four-eyes rule:** the reviewer must not have worked on the branch at all. That means not its creator and not anyone in `contributorIds`, the list of people who changed, rebased or tested it.
+  - **Merge:**
+    - Allowed after approval. It needs an approval of the current test run for exactly the current head, and main still at the branch's base.
+    - It records the version and the branch's merged status in one transaction (`recordVersion` with `basedOn` and `onCreated`).
+  - **Main moved on:** if main changed while the branch was open, the branch is rebased onto the latest version. The head stays, so anything that would undo newer work on main appears in the change list and must be reviewed. There is no automatic three-way merge.
+  - **Close** ends a branch without recording anything on main.
+  - The existing drafts were converted into open branches by the metadata migration, so no work was lost. Free-standing migrations between two versions are no longer created.
+- **Consequences.**
+  - Main can mean "approved", not yet "applied". When apply exists (Phase 1b), approved versions are rolled out to environments.
+  - Rebasing a branch whose head does not contain main's newer changes shows them as reversals. Dashboard branches have to redo those changes. Code branches upload a schema.prisma that includes them.

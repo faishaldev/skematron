@@ -36,18 +36,24 @@ export default async function VersionPage({
     serverVersion?: string;
     prismaVersion?: string;
     baseVersion?: string;
+    branch?: string;
+    via?: string;
   };
-  const fromPrisma = source.kind === "prisma-schema";
+  const fromPrisma =
+    source.kind === "prisma-schema" || source.via === "prisma-schema";
   const base = `/projects/${project.slug}`;
   const here = `${base}/versions/${version.number}`;
   const { script, statements } = renderPostgresMigration(
     planMigration(emptySnapshot("postgresql"), snapshot),
   );
-  const origin = fromPrisma
-    ? `schema.prisma (Prisma ${source.prismaVersion ?? "?"})`
-    : source.kind === "dashboard"
-      ? `the schema editor (${source.baseVersion === "none" || source.baseVersion === undefined ? "a new schema" : `based on v${source.baseVersion}`})`
-      : `the ${source.environmentName ?? "?"} database (PostgreSQL ${source.serverVersion ?? "?"})`;
+  const origin =
+    source.kind === "branch"
+      ? `branch ${source.branch} (${source.via === "prisma-schema" ? `a schema.prisma, Prisma ${source.prismaVersion ?? "?"}` : source.via === "introspection" ? `the ${source.environmentName ?? "?"} database` : "the schema editor"}), merged into main`
+      : fromPrisma
+        ? `schema.prisma (Prisma ${source.prismaVersion ?? "?"})`
+        : source.kind === "dashboard"
+          ? `the schema editor (${source.baseVersion === "none" || source.baseVersion === undefined ? "a new schema" : `based on v${source.baseVersion}`})`
+          : `the ${source.environmentName ?? "?"} database (PostgreSQL ${source.serverVersion ?? "?"})`;
   const tables = snapshot.namespaces.flatMap((namespace) => namespace.tables);
   const columnCount = tables.reduce(
     (total, table) => total + table.columns.length,
@@ -80,12 +86,12 @@ export default async function VersionPage({
               >
                 What changed since v{previous}
               </Link>
-              {can(actor.role, "author-migrations") && (
+              {source.kind === "branch" && (
                 <Link
-                  href={`${base}/migrations/new?from=${previous}&to=${version.number}`}
-                  className="button primary"
+                  href={`${base}/branches/${source.branch}`}
+                  className="button"
                 >
-                  Create migration v{previous} → v{version.number}
+                  Branch {source.branch}
                 </Link>
               )}
             </>

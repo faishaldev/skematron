@@ -18,7 +18,7 @@ import {
 } from "../../../../lib/projects.ts";
 import { requirePermission } from "../../../../lib/session.ts";
 import { readLive } from "../../../../lib/targets.ts";
-import { importVersion } from "../../../../lib/versions.ts";
+import { importEnvironment } from "../../../../lib/branches.ts";
 
 const projectPath = (slug: string) => `/projects/${encodeURIComponent(slug)}`;
 const environmentPath = (slug: string, name: string) =>
@@ -129,18 +129,27 @@ export async function importVersionAction(formData: FormData): Promise<void> {
     const actor = await requirePermission("use-databases");
     const project = await getProject(actor, slug);
     const environment = await getEnvironment(actor, project, name);
-    const result = await importVersion(actor, project, environment);
-    return result.status === "created"
-      ? withFlash(
+    const result = await importEnvironment(actor, project, environment);
+    switch (result.kind) {
+      case "version":
+        return withFlash(
           `${projectPath(slug)}/versions/${result.number}`,
           "notice",
-          `Imported version ${result.number} from ${name}.`,
-        )
-      : withFlash(
+          `Imported ${name} as version ${result.number}, the starting point on main.`,
+        );
+      case "unchanged":
+        return withFlash(
           back,
           "notice",
-          `No changes: ${name} still matches version ${result.number}, so no new version was created.`,
+          `No changes: ${name} still matches v${result.number} on main.`,
         );
+      case "branch":
+        return withFlash(
+          `${projectPath(slug)}/branches/${result.name}`,
+          "notice",
+          `${name} differs from main. Its schema is in the new branch ${result.name}, so the difference can be reviewed before it reaches main.`,
+        );
+    }
   });
 }
 
@@ -166,17 +175,11 @@ export async function importPrismaSchemaAction(
       result.removed.length === 0
         ? ""
         : ` Removed from the stored file: ${result.removed.join(", ")}.`;
-    return result.status === "created"
-      ? withFlash(
-          `${projectPath(slug)}/versions/${result.number}`,
-          "notice",
-          `Imported version ${result.number} from schema.prisma.${removed}`,
-        )
-      : withFlash(
-          projectPath(slug),
-          "notice",
-          `No changes: the schema still matches version ${result.number}, so no new version was created.`,
-        );
+    return withFlash(
+      `${projectPath(slug)}/versions/${result.number}`,
+      "notice",
+      `Imported schema.prisma as version ${result.number}, the starting point on main. Start a branch for the next change.${removed}`,
+    );
   });
 }
 

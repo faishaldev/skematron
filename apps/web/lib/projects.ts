@@ -67,6 +67,19 @@ export function schemaSourceOf(project: {
   return project.schemaSource === "dashboard" ? "dashboard" : "code";
 }
 
+/** Refuses work that belongs to the other schema source, so a project has one source of truth. */
+export function requireSchemaSource(
+  project: { schemaSource: string },
+  source: SchemaSource,
+): void {
+  if (schemaSourceOf(project) === source) return;
+  throw new UserFacingError(
+    source === "code"
+      ? "This project's schema is written in Skematron's editor, so change it there. An admin can switch the project to code in its settings."
+      : "This project's schema is written in code: upload the changed schema.prisma instead. An admin can switch the project to the schema editor in its settings.",
+  );
+}
+
 export async function setSchemaSource(
   actor: Actor,
   project: Project,

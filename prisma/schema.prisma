@@ -41,7 +41,7 @@ model Project {
   environments   Environment[]
   versions       SchemaVersion[]
   migrations     Migration[]
-  drafts         SchemaDraft[]
+  branches       Branch[]
 
   @@unique([organizationId, slug])
   @@map("project")
@@ -68,9 +68,9 @@ model Environment {
 
 /// An immutable schema version. The snapshot itself is an artifact keyed by `checksum`.
 model SchemaVersion {
-  id             String        @id @default(uuid(7))
+  id             String      @id @default(uuid(7))
   projectId      String
-  project        Project       @relation(fields: [projectId], references: [id], onDelete: Restrict)
+  project        Project     @relation(fields: [projectId], references: [id], onDelete: Restrict)
   number         Int
   checksum       String
   dialect        String
@@ -82,39 +82,53 @@ model SchemaVersion {
   unsupported    Json
   note           String?
   createdById    String
-  createdAt      DateTime      @default(now())
-  migrationsFrom Migration[]   @relation("MigrationFrom")
-  migrationsTo   Migration[]   @relation("MigrationTo")
-  drafts         SchemaDraft[]
+  createdAt      DateTime    @default(now())
+  migrationsFrom Migration[] @relation("MigrationFrom")
+  migrationsTo   Migration[] @relation("MigrationTo")
+  branchesFrom   Branch[]    @relation("BranchBase")
+  mergedBranch   Branch?     @relation("BranchMerged")
 
   @@unique([projectId, number])
   @@index([projectId, checksum])
   @@map("schema_version")
 }
 
-/// One person's working copy of a project's schema in the dashboard editor. Unlike versions,
-/// it changes with every edit; saving it records a new version and deletes the draft.
-model SchemaDraft {
-  id            String         @id @default(uuid(7))
-  projectId     String
-  project       Project        @relation(fields: [projectId], references: [id], onDelete: Restrict)
-  userId        String
-  /// The version the draft started from; null when the project had no versions.
-  baseVersionId String?
-  baseVersion   SchemaVersion? @relation(fields: [baseVersionId], references: [id], onDelete: Restrict)
-  /// Canonical snapshot, as the shadow database reported it after the last edit.
-  snapshot      Json
-  /// What the shadow database reported but did not capture, such as extensions.
-  unsupported   Json
-  createdAt     DateTime       @default(now())
-  updatedAt     DateTime       @updatedAt
+/// A proposed change to a project's schema, started from the latest version on main. People
+/// change its head (schema editor or schema.prisma upload), test and review it through its
+/// migration, then merge it (the head becomes the next version) or close it.
+model Branch {
+  id              String         @id @default(uuid(7))
+  projectId       String
+  project         Project        @relation(fields: [projectId], references: [id], onDelete: Restrict)
+  name            String
+  /// "open", "merged" or "closed".
+  status          String
+  /// The main version the branch compares against; null when main had no versions yet.
+  baseVersionId   String?
+  baseVersion     SchemaVersion? @relation("BranchBase", fields: [baseVersionId], references: [id], onDelete: Restrict)
+  /// The branch's schema: a canonical snapshot, as PostgreSQL reported it after the last change.
+  head            Json
+  /// What was reported for the head but not captured, such as extensions.
+  headUnsupported Json
+  /// Where the head came from last: the editor, a schema.prisma upload or a database import.
+  headSource      Json
+  /// The version the branch became when it was merged.
+  mergedVersionId String?        @unique
+  mergedVersion   SchemaVersion? @relation("BranchMerged", fields: [mergedVersionId], references: [id], onDelete: Restrict)
+  createdById     String
+  /// Everyone who created, changed, rebased or tested the branch. None of them may review it.
+  contributorIds  String[]
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+  closedAt        DateTime?
+  migration       Migration?
 
-  @@unique([projectId, userId])
-  @@map("schema_draft")
+  @@unique([projectId, name])
+  @@map("branch")
 }
 
-/// A proposed change from one schema version to another. Its content lives in immutable
-/// revisions; only `status` changes, following the review workflow.
+/// The review of a branch: the change from its base to its head. Its content lives in
+/// immutable revisions; only `status` changes, following the review workflow.
 model Migration {
   id            String              @id @default(uuid(7))
   projectId     String
@@ -123,10 +137,15 @@ model Migration {
   title         String
   /// "draft", "in_review", "approved" or "rejected".
   status        String
-  fromVersionId String
-  fromVersion   SchemaVersion       @relation("MigrationFrom", fields: [fromVersionId], references: [id], onDelete: Restrict)
-  toVersionId   String
-  toVersion     SchemaVersion       @relation("MigrationTo", fields: [toVersionId], references: [id], onDelete: Restrict)
+  /// The branch this migration reviews.
+  branchId      String?             @unique
+  branch        Branch?             @relation(fields: [branchId], references: [id], onDelete: Restrict)
+  /// The branch's base version; null when main had no versions.
+  fromVersionId String?
+  fromVersion   SchemaVersion?      @relation("MigrationFrom", fields: [fromVersionId], references: [id], onDelete: Restrict)
+  /// The version the branch became when merged.
+  toVersionId   String?
+  toVersion     SchemaVersion?      @relation("MigrationTo", fields: [toVersionId], references: [id], onDelete: Restrict)
   createdById   String
   createdAt     DateTime            @default(now())
   updatedAt     DateTime            @updatedAt
@@ -149,6 +168,8 @@ model MigrationRevision {
   /// Artifact keys of the plan (JSON) and the rendered SQL script.
   planChecksum       String
   scriptChecksum     String
+  /// Artifact key of the snapshot this revision planned towards (the branch head when tested).
+  toChecksum         String?
   /// Operation counts: total, safe, caution, destructive.
   summary            Json
   openQuestions      Int

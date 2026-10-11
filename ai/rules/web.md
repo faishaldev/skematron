@@ -51,25 +51,25 @@ Read before changing anything in `apps/web/`. These rules add to AGENTS.md and n
 - **Schema versions are immutable.**
   - `lib/versions.ts` stores the snapshot in `@skematron/storage` first. Then, under a per-project advisory lock, it records the next number, or reports "unchanged".
   - Never update or delete a version.
-- **The schema editor** (`lib/schema-drafts.ts`):
-  - Works only for projects whose schema source is "dashboard"; Prisma import only for "code". Keep that split, so a project never has two sources of truth.
-  - Drafts are private to their author and mutable.
-  - Every edit goes through core's edit functions, then `normalizeSnapshot` in the shadow database. Never store a typed fragment without that round trip.
-  - Check typed names, types and defaults with `lib/schema-input.ts` first.
-  - Save only through `recordVersion` with `basedOn`.
-- **Migrations** (`lib/migrations.ts`):
-  - Revisions and reviews are immutable; only `Migration.status` changes, under the per-migration advisory lock.
-  - A new revision always resets the status to draft.
-  - Submitting needs zero open questions, zero unsupported changes and a passed verification.
-  - Approve or reject needs `review-migrations`, and the reviewer must not have written the migration or the revision. Approving destructive operations needs an explicit acknowledgment, rejecting needs a comment, and the reviewed revision id must still be the latest.
-  - Pages show the stored plan and script artifacts of a revision, not a fresh rendering.
+- **Main changes only by merging a branch** (`lib/branches.ts`). The only exception is the baseline: the first `schema.prisma` import or environment import. Never add another path that records versions directly.
+- **Branches:**
+  - Change a head only through `updateHead`, which checks `updatedAt` (no lost updates), records the contributor, and sends the review back to draft.
+  - The editor works only for "dashboard" projects and uploads only for "code" projects (`requireSchemaSource`), so a project never has two sources of truth.
+  - Every editor edit goes through core's edit functions, then `normalizeSnapshot` in the shadow database. Never store a typed fragment without that round trip. Check typed names, types and defaults with `lib/schema-input.ts` first.
+  - Merge only through `mergeBranch`. It requires an approval of the current test run for exactly the current head, and records the version with `basedOn` and `onCreated` in one transaction.
+  - A closed or merged branch never changes again.
+- **Migrations** (`lib/migrations.ts`) review branches:
+  - Revisions and reviews are immutable; only `Migration.status` (and `toVersionId` at merge) change, under the per-migration advisory lock.
+  - A test run counts only if it was made after the branch's last change (`testedRevision`).
+  - Submitting needs changes, zero open questions, zero unsupported changes and a passed, current test run.
+  - Approve or reject needs `review-migrations`, and the reviewer must not have worked on the branch (`authorsOf`). Approving destructive operations needs an explicit acknowledgment, rejecting needs a comment, and the reviewed revision id must still be the latest.
 - **Audit every privileged action** with `recordAudit` (`lib/audit.ts`). Add new actions to its `AuditAction` type.
 - Configuration comes from `lib/env.ts`. It is read lazily and must fail with a clear message.
 
 ## Pages and wording
 
 - **Every page starts the same way:** `Breadcrumbs`, then `PageHeader` (title, optional badge and subtitle, main actions on the right), then `Flash`. These and `Callout`, `Steps`, `Empty` and `Stat` are in `app/components/ui.tsx`.
-- **Tell people what to do next.** Pages with a workflow (project, migration) show one `Callout` with the next step and its button. Empty lists use `Empty` and say how to fill them.
+- **Tell people what to do next.** Pages with a workflow (project, branch) show one `Callout` with the next step and its button. Empty lists use `Empty` and say how to fill them.
 - **Plain language first, SQL second.** Plans are shown with `PlanView`: one sentence per change (`describeOperation`), its risk and warnings, and the SQL behind a `<details>`. Technical steps (sequences, temporary defaults) are folded away. Checksums, history and downloads go into `<details>` too.
 - **Words people use:** "test run", not "shadow check"; "database", not "environment", in headings; "Deletes data", not "destructive", in badges. Keep stored values and audit actions unchanged.
 - Style with the classes in `app/globals.css` (`button`/`.button`, `.primary`, `.card`, `.card.flush`, `.callout`, `label.option`, `.accordion`). Both light and dark mode must work.

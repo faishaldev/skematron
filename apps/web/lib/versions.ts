@@ -7,40 +7,19 @@ import {
 } from "@skematron/core";
 import type { UnsupportedObject } from "@skematron/adapters";
 import { createArtifactStore } from "@skematron/storage";
+import type { Prisma } from "../generated/prisma/client.ts";
 import type { Actor } from "./actor.ts";
 import { recordAudit } from "./audit.ts";
 import { db } from "./db.ts";
 import { artifactDirectory } from "./env.ts";
 import { NotFoundError, UserFacingError } from "./errors.ts";
-import { assertCan, type Environment, type Project } from "./projects.ts";
-import { readLive } from "./targets.ts";
+import { assertCan, type Project } from "./projects.ts";
 
 export const artifacts = () => createArtifactStore(artifactDirectory());
 
 export type ImportResult =
   | { status: "created"; number: number }
   | { status: "unchanged"; number: number };
-
-/** Introspects the environment (read-only) and records the result as the next version. */
-export async function importVersion(
-  actor: Actor,
-  project: Project,
-  environment: Environment,
-): Promise<ImportResult> {
-  assertCan(actor, "use-databases");
-  const { snapshot, unsupported, serverVersion } = await readLive(environment);
-  return recordVersion(actor, project, {
-    snapshot,
-    unsupported,
-    source: {
-      kind: "introspection",
-      adapter: "postgresql",
-      environmentId: environment.id,
-      environmentName: environment.name,
-      serverVersion,
-    },
-  });
-}
 
 /**
  * Stores a snapshot as the project's next version, unless it is identical to the latest one.
@@ -56,6 +35,11 @@ export async function recordVersion(
     unsupported: UnsupportedObject[];
     source: Record<string, string>;
     basedOn?: { versionId: string | null };
+    /** Runs in the same transaction when a version is created, e.g. to mark a branch merged. */
+    onCreated?: (
+      tx: Prisma.TransactionClient,
+      version: { id: string; number: number },
+    ) => Promise<void>;
   },
 ): Promise<ImportResult> {
   const text = serializeSnapshot(input.snapshot);
@@ -76,7 +60,9 @@ export async function recordVersion(
       (latest?.id ?? null) !== input.basedOn.versionId
     ) {
       throw new UserFacingError(
-        `Version ${latest?.number} was saved after this draft started. Discard the draft and start again from v${latest?.number}.`,
+        latest === null
+          ? "Main changed in the meantime. Reload and try again."
+          : `Main moved on to v${latest.number} in the meantime. Rebase onto v${latest.number}, check the changes, and test again.`,
       );
     }
     if (latest?.checksum === checksum) {
@@ -95,6 +81,7 @@ export async function recordVersion(
         createdById: actor.userId,
       },
     });
+    await input.onCreated?.(tx, version);
     return {
       status: "created",
       number: version.number,

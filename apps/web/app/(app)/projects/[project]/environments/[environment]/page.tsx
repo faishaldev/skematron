@@ -80,7 +80,7 @@ export default async function EnvironmentPage({
               {hidden}
               <input type="hidden" name="back" value="environment" />
               <button type="submit" className="primary">
-                Import version
+                Import schema
               </button>
             </form>
             {latest !== undefined && (
@@ -93,10 +93,10 @@ export default async function EnvironmentPage({
             )}
           </div>
           <p className="hint" style={{ marginTop: 10 }}>
-            Import version saves this database&apos;s current schema as a new
-            version. Check drift shows how it differs from the latest version.
-            All of them only read the schema; Skematron never writes to this
-            database.
+            Import schema reads this database&apos;s schema: the first import
+            becomes v1 on main; after that, a difference from main becomes a new
+            branch, so it is reviewed before it reaches main. Check drift only
+            shows the difference. Skematron never writes to this database.
           </p>
         </div>
       )}

@@ -88,6 +88,16 @@ All notable changes to Skematron are recorded here. The format follows [Keep a C
 
 ### Changed
 
+- **Schema changes now go through branches, like git.**
+  - **Main:** the line of approved versions. Its first version (the baseline) is imported from a `schema.prisma` or a database. After that, main only changes by merging a branch.
+  - **Branches:**
+    - Start one from the latest version on main, then change it in the schema editor or by uploading a `schema.prisma`.
+    - Skematron shows the changes, asks its questions and test-runs them.
+    - After a review by someone who did not work on it, merge it to make the next version, or close it if it is not needed: nothing reaches main.
+    - Branches are shared, so teammates can work on them together; changes made at the same time never overwrite each other.
+    - If main moves on while a branch is open, rebase the branch onto the newest version before merging.
+  - **Importing a database** that differs from main now creates a branch (`from-<environment>`), so the difference is reviewed before it reaches main.
+  - Existing schema editor drafts became open branches. The separate "New migration between two versions" page and private drafts are gone.
 - **The dashboard is easier to follow.**
   - **Every page:** breadcrumbs, a clear title, and the main buttons at the top right.
   - **Project page:** an overview that says what to do next (for example "M2 is not submitted yet", or "v3 has no migration yet"), with counts of versions, migrations and databases. Project settings are folded away.

@@ -112,17 +112,6 @@ export default async function ComparePage({
         <Callout
           tone="warning"
           title={`Skematron has ${questions} ${questions === 1 ? "question" : "questions"} about this change`}
-          actions={
-            environmentName === undefined &&
-            can(actor.role, "author-migrations") ? (
-              <Link
-                href={`${base}/migrations/new?from=${param(query.from)}&to=${param(query.to)}`}
-                className="button primary"
-              >
-                Create a migration to answer them
-              </Link>
-            ) : undefined
-          }
         >
           <p>
             For example, whether a column was renamed or removed. Until they are

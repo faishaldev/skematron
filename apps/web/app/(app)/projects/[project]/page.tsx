@@ -1,18 +1,18 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import type { ReactNode } from "react";
+import { branchStatusOf, listBranches } from "../../../../lib/branches.ts";
 import { NotFoundError } from "../../../../lib/errors.ts";
-import { listMigrations, statusOf } from "../../../../lib/migrations.ts";
+import { statusOf } from "../../../../lib/migrations.ts";
 import {
   getProject,
   listEnvironments,
   schemaSourceOf,
 } from "../../../../lib/projects.ts";
 import { can } from "../../../../lib/roles.ts";
-import { getDraft } from "../../../../lib/schema-drafts.ts";
 import { requireActor } from "../../../../lib/session.ts";
 import { listVersions, unsupportedOf } from "../../../../lib/versions.ts";
-import { StatusBadge } from "../../../components/migration-status.tsx";
+import { BranchBadge } from "../../../components/branch-status.tsx";
 import {
   Breadcrumbs,
   Callout,
@@ -28,6 +28,57 @@ import { importVersionAction, setSchemaSourceAction } from "./actions.ts";
 
 export const dynamic = "force-dynamic";
 
+type BranchRow = Awaited<ReturnType<typeof listBranches>>[number];
+
+const reviewOf = (branch: BranchRow) =>
+  branch.migration === null ? "draft" : statusOf(branch.migration);
+
+function BranchTable({
+  branches,
+  base,
+}: {
+  branches: BranchRow[];
+  base: string;
+}) {
+  return (
+    <table>
+      <thead>
+        <tr>
+          <th>Branch</th>
+          <th>From</th>
+          <th>Status</th>
+          <th>Last change</th>
+        </tr>
+      </thead>
+      <tbody>
+        {branches.map((branch) => (
+          <tr key={branch.id}>
+            <td>
+              <Link href={`${base}/branches/${branch.name}`}>
+                <strong>{branch.name}</strong>
+              </Link>
+            </td>
+            <td>
+              {branch.baseVersion === null
+                ? "empty"
+                : `v${branch.baseVersion.number}`}
+              {branch.mergedVersion !== null &&
+                ` → v${branch.mergedVersion.number}`}
+            </td>
+            <td>
+              <BranchBadge
+                status={branchStatusOf(branch)}
+                review={reviewOf(branch)}
+              />
+            </td>
+            <td className="muted">{formatDate(branch.updatedAt)}</td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  );
+}
+
 export default async function ProjectPage({
   params,
   searchParams,
@@ -41,183 +92,126 @@ export default async function ProjectPage({
     if (error instanceof NotFoundError) notFound();
     throw error;
   });
-  const [environments, versions, migrations] = await Promise.all([
+  const [environments, versions, branches] = await Promise.all([
     listEnvironments(actor, project),
     listVersions(actor, project),
-    listMigrations(actor, project),
+    listBranches(actor, project),
   ]);
   const base = `/projects/${project.slug}`;
   const latest = versions[0];
-  const previous = versions[1];
   const source = schemaSourceOf(project);
   const canAuthor = can(actor.role, "author-migrations");
   const canReview = can(actor.role, "review-migrations");
   const canManage = can(actor.role, "manage-projects");
-  const draft =
-    source === "dashboard" && canAuthor ? await getDraft(actor, project) : null;
-  const inReview = migrations.filter((m) => statusOf(m) === "in_review");
-  const drafts = migrations.filter((m) => statusOf(m) === "draft");
-  const approved = migrations.filter((m) => statusOf(m) === "approved");
-  const latestHasMigration =
-    latest === undefined ||
-    migrations.some((m) => m.toVersion.number === latest.number);
+  const openBranches = branches.filter((b) => branchStatusOf(b) === "open");
+  const doneBranches = branches.filter((b) => branchStatusOf(b) !== "open");
+  const inReview = openBranches.filter((b) => reviewOf(b) === "in_review");
+  const approved = openBranches.filter((b) => reviewOf(b) === "approved");
+  const working = openBranches.filter(
+    (b) => reviewOf(b) === "draft" || reviewOf(b) === "rejected",
+  );
 
-  const editLink = (label: string, primary = true) => (
+  const newBranch = (primary: boolean) => (
     <Link
-      href={`${base}/schema`}
+      href={`${base}/branches/new`}
       className={`button${primary ? " primary" : ""}`}
     >
+      New branch
+    </Link>
+  );
+  const openBranch = (branch: BranchRow, label: string) => (
+    <Link href={`${base}/branches/${branch.name}`} className="button primary">
       {label}
-    </Link>
-  );
-  const importLink = (primary = true) => (
-    <Link
-      href={`${base}/versions/new`}
-      className={`button${primary ? " primary" : ""}`}
-    >
-      Import schema.prisma
-    </Link>
-  );
-  const newMigrationLink = (from?: number, to?: number, primary = false) => (
-    <Link
-      href={`${base}/migrations/new${from === undefined ? "" : `?from=${from}&to=${to}`}`}
-      className={`button${primary ? " primary" : ""}`}
-    >
-      New migration
     </Link>
   );
 
   let next: ReactNode;
-  if (draft !== null) {
+  if (latest === undefined && source === "code") {
     next = (
       <Callout
-        title="You have unsaved schema changes"
-        actions={editLink("Continue editing")}
+        title="Add your current schema"
+        actions={
+          canAuthor ? (
+            <>
+              <Link href={`${base}/versions/new`} className="button primary">
+                Import schema.prisma
+              </Link>
+              {canManage && (
+                <Link href={`${base}/environments/new`} className="button">
+                  Connect a database
+                </Link>
+              )}
+            </>
+          ) : undefined
+        }
       >
         <p>
-          Your draft is based on{" "}
-          {draft.baseVersion === null
-            ? "an empty schema"
-            : `v${draft.baseVersion.number}`}
-          . Save it as a version when you are done.
+          Import your schema.prisma, or connect a database and import its
+          schema. It becomes v1 on main, the starting point. After that, every
+          change goes through a branch.
         </p>
+      </Callout>
+    );
+  } else if (approved.length > 0 && canAuthor) {
+    next = (
+      <Callout
+        tone="success"
+        title={`Branch ${approved[0]!.name} is approved`}
+        actions={openBranch(approved[0]!, "Open and merge")}
+      >
+        <p>Merge it to make it v{(latest?.number ?? 0) + 1} on main.</p>
       </Callout>
     );
   } else if (inReview.length > 0 && canReview) {
-    const migration = inReview[0]!;
     next = (
       <Callout
-        title={`M${migration.number} is waiting for review`}
-        actions={
-          <Link
-            href={`${base}/migrations/${migration.number}`}
-            className="button primary"
-          >
-            Review M{migration.number}
-          </Link>
-        }
+        title={`Branch ${inReview[0]!.name} is waiting for review`}
+        actions={openBranch(inReview[0]!, "Review it")}
       >
-        <p>
-          &ldquo;{migration.title}&rdquo; needs an admin or owner who did not
-          write it to approve or reject it.
-        </p>
+        <p>An admin or owner who did not work on it approves it.</p>
       </Callout>
     );
-  } else if (drafts.length > 0 && canAuthor) {
-    const migration = drafts[0]!;
+  } else if (working.length > 0 && canAuthor) {
     next = (
       <Callout
-        title={`M${migration.number} is not submitted yet`}
-        actions={
-          <Link
-            href={`${base}/migrations/${migration.number}`}
-            className="button primary"
-          >
-            Open M{migration.number}
-          </Link>
-        }
+        title={`Branch ${working[0]!.name} is in progress`}
+        actions={openBranch(working[0]!, "Continue")}
       >
-        <p>Answer its questions, then submit it for review.</p>
+        <p>
+          Make the changes, answer Skematron&apos;s questions, test them, then
+          submit the branch for review.
+        </p>
       </Callout>
     );
   } else if (latest === undefined) {
-    next =
-      source === "dashboard" ? (
-        <Callout
-          title="Design your schema"
-          actions={canAuthor ? editLink("Open the schema editor") : undefined}
-        >
-          <p>
-            Add your first tables in the schema editor. Saving makes version 1.
-          </p>
-        </Callout>
-      ) : (
-        <Callout
-          title="Add your schema"
-          actions={
-            canAuthor ? (
-              <>
-                {importLink()}
-                {canManage && (
-                  <Link href={`${base}/environments/new`} className="button">
-                    Connect a database
-                  </Link>
-                )}
-              </>
-            ) : undefined
-          }
-        >
-          <p>
-            Import your schema.prisma, or connect a database and import its
-            schema. Each import becomes a version: a snapshot of the schema at
-            that moment.
-          </p>
-        </Callout>
-      );
-  } else if (previous === undefined) {
     next = (
       <Callout
-        title="Version 1 is your starting point"
-        actions={
-          canAuthor
-            ? source === "dashboard"
-              ? editLink("Edit schema")
-              : importLink()
-            : undefined
-        }
+        title="Design your schema"
+        actions={canAuthor ? newBranch(true) : undefined}
       >
         <p>
-          {source === "dashboard"
-            ? "Edit the schema and save it as version 2."
-            : "When the schema changes, import it again as version 2."}{" "}
-          Skematron then works out the migration between the two versions.
-        </p>
-      </Callout>
-    );
-  } else if (!latestHasMigration && canAuthor) {
-    next = (
-      <Callout
-        title={`v${latest.number} has no migration yet`}
-        actions={newMigrationLink(previous.number, latest.number, true)}
-      >
-        <p>
-          Create the migration from v{previous.number} to v{latest.number}.
-          Skematron plans it, asks about anything unclear, and tests it.
+          Start a branch, add your first tables in the schema editor, get it
+          reviewed, and merge it to make v1.
         </p>
       </Callout>
     );
   } else if (inReview.length > 0) {
     next = (
-      <Callout title={`M${inReview[0]!.number} is waiting for review`}>
-        <p>An admin or owner who did not write it approves or rejects it.</p>
+      <Callout title={`Branch ${inReview[0]!.name} is waiting for review`}>
+        <p>An admin or owner who did not work on it approves it.</p>
       </Callout>
     );
   } else {
     next = (
-      <Callout tone="success" title="All caught up">
+      <Callout
+        tone="success"
+        title={`Main is at v${latest.number}`}
+        actions={canAuthor ? newBranch(false) : undefined}
+      >
         <p>
-          Every version has a migration. Approved migrations can be downloaded
-          as SQL; running them from Skematron comes in a later release.
+          To change the schema, start a branch. It stays separate from main
+          until it is reviewed and merged, and can be closed if it is not
+          needed.
         </p>
       </Callout>
     );
@@ -239,14 +233,9 @@ export default async function ProjectPage({
           </span>
         }
         actions={
-          canAuthor ? (
-            <>
-              {versions.length > 1 && newMigrationLink()}
-              {source === "dashboard"
-                ? editLink(draft === null ? "Edit schema" : "Continue editing")
-                : importLink()}
-            </>
-          ) : undefined
+          canAuthor && (latest !== undefined || source === "dashboard")
+            ? newBranch(true)
+            : undefined
         }
       />
       <Flash searchParams={searchParams} />
@@ -254,20 +243,14 @@ export default async function ProjectPage({
 
       <div className="stats">
         <Stat
-          label="Schema versions"
-          value={versions.length}
-          detail={
-            latest === undefined ? "none yet" : `latest: v${latest.number}`
-          }
+          label="Main"
+          value={latest === undefined ? "—" : `v${latest.number}`}
+          detail={plural(versions.length, "version")}
         />
         <Stat
-          label="Migrations"
-          value={migrations.length}
-          detail={
-            migrations.length === 0
-              ? "none yet"
-              : `${inReview.length} in review · ${approved.length} approved`
-          }
+          label="Open branches"
+          value={openBranches.length}
+          detail={`${inReview.length} in review · ${approved.length} approved`}
         />
         <Stat
           label="Databases"
@@ -282,61 +265,42 @@ export default async function ProjectPage({
 
       <div className="section-head">
         <div>
-          <h2>Migrations</h2>
+          <h2>Branches</h2>
           <p className="hint">
-            Each migration changes a database from one version to another.
+            Changes in progress. Each one is tested and reviewed, then merged
+            into main or closed.
           </p>
         </div>
-        {canAuthor && versions.length > 1 && newMigrationLink()}
+        {canAuthor && newBranch(false)}
       </div>
-      {migrations.length === 0 ? (
-        <Empty title="No migrations yet">
-          <p>
-            {versions.length < 2
-              ? "A migration needs two versions: the schema before and after a change."
-              : "Create one to go from one version to another."}
-          </p>
+      {openBranches.length === 0 ? (
+        <Empty title="No open branches">
+          <p>Start a branch whenever the schema needs to change.</p>
         </Empty>
       ) : (
         <div className="card flush">
-          <table>
-            <thead>
-              <tr>
-                <th>Migration</th>
-                <th>Change</th>
-                <th>Status</th>
-                <th>Updated</th>
-              </tr>
-            </thead>
-            <tbody>
-              {migrations.map((migration) => (
-                <tr key={migration.id}>
-                  <td>
-                    <Link href={`${base}/migrations/${migration.number}`}>
-                      <strong>M{migration.number}</strong> · {migration.title}
-                    </Link>
-                  </td>
-                  <td>
-                    v{migration.fromVersion.number} → v
-                    {migration.toVersion.number}
-                  </td>
-                  <td>
-                    <StatusBadge status={statusOf(migration)} />
-                  </td>
-                  <td className="muted">{formatDate(migration.updatedAt)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+          <BranchTable branches={openBranches} base={base} />
         </div>
+      )}
+      {doneBranches.length > 0 && (
+        <details className="card">
+          <summary>
+            {plural(
+              doneBranches.length,
+              "merged or closed branch",
+              "merged or closed branches",
+            )}
+          </summary>
+          <BranchTable branches={doneBranches} base={base} />
+        </details>
       )}
 
       <div className="section-head">
         <div>
-          <h2>Schema versions</h2>
+          <h2>Main</h2>
           <p className="hint">
-            Snapshots of the schema. They never change; every change makes a new
-            version.
+            The agreed schema, as numbered versions that never change. A version
+            is added when a branch is merged.
           </p>
         </div>
         {versions.length > 1 && (
@@ -372,8 +336,8 @@ export default async function ProjectPage({
         <Empty title="No versions yet">
           <p>
             {source === "dashboard"
-              ? "Save the schema editor's draft to make the first version."
-              : "Import a schema.prisma, or import a version from a connected database."}
+              ? "Start a branch, design the schema, and merge it to make v1."
+              : "Import a schema.prisma, or import a version from a connected database, to make v1."}
           </p>
         </Empty>
       ) : (
@@ -392,6 +356,7 @@ export default async function ProjectPage({
                 const origin = version.source as {
                   kind?: string;
                   environmentName?: string;
+                  branch?: string;
                 };
                 const untracked = unsupportedOf(version).length;
                 return (
@@ -403,11 +368,17 @@ export default async function ProjectPage({
                     </td>
                     <td className="muted">{formatDate(version.createdAt)}</td>
                     <td>
-                      {origin.kind === "prisma-schema"
-                        ? "schema.prisma"
-                        : origin.kind === "dashboard"
-                          ? "Schema editor"
-                          : `Database ${origin.environmentName ?? ""}`}
+                      {origin.kind === "branch" ? (
+                        <Link href={`${base}/branches/${origin.branch}`}>
+                          Branch {origin.branch}
+                        </Link>
+                      ) : origin.kind === "prisma-schema" ? (
+                        "schema.prisma (baseline)"
+                      ) : origin.kind === "dashboard" ? (
+                        "Schema editor"
+                      ) : (
+                        `Database ${origin.environmentName ?? ""} (baseline)`
+                      )}
                     </td>
                     <td>
                       {untracked > 0 && (
@@ -483,7 +454,7 @@ export default async function ProjectPage({
                             value={environment.name}
                           />
                           <button type="submit" className="small">
-                            Import version
+                            Import schema
                           </button>
                         </form>
                       )}

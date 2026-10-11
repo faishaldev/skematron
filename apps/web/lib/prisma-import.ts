@@ -10,9 +10,14 @@ import { promisify } from "node:util";
 import { preparePrismaSchema } from "@skematron/adapters";
 import type { Actor } from "./actor.ts";
 import { UserFacingError } from "./errors.ts";
-import { assertCan, schemaSourceOf, type Project } from "./projects.ts";
+import { assertCan, requireSchemaSource, type Project } from "./projects.ts";
 import { snapshotFromDdl } from "./shadow.ts";
-import { artifacts, recordVersion, type ImportResult } from "./versions.ts";
+import {
+  artifacts,
+  listVersions,
+  recordVersion,
+  type ImportResult,
+} from "./versions.ts";
 
 export const MAX_PRISMA_SCHEMA_BYTES = 512 * 1024;
 const PRISMA_TIMEOUT_MS = 60_000;
@@ -118,20 +123,11 @@ async function prismaDdl(
 }
 
 /**
- * Records a `schema.prisma` as the project's next version. Connection URLs are removed
- * before anything else happens, so the stored schema file never contains them.
+ * Turns a `schema.prisma` into a snapshot through Prisma's CLI and the shadow database.
+ * Connection URLs are removed before anything else happens, so the stored schema file
+ * (an artifact, for provenance and download) never contains them.
  */
-export async function importPrismaSchema(
-  actor: Actor,
-  project: Project,
-  text: string,
-): Promise<ImportResult & { removed: string[] }> {
-  assertCan(actor, "author-migrations");
-  if (schemaSourceOf(project) !== "code") {
-    throw new UserFacingError(
-      "This project's schema is written in the dashboard. To import a schema.prisma instead, an admin can switch its schema source to code.",
-    );
-  }
+export async function prismaSnapshot(text: string) {
   if (text.trim() === "") {
     throw new UserFacingError("Upload or paste a schema.prisma file.");
   }
@@ -146,14 +142,40 @@ export async function importPrismaSchema(
   const schemaFile = await artifacts().put(
     new TextEncoder().encode(prepared.schema),
   );
-  const result = await recordVersion(actor, project, {
+  return {
     snapshot,
     unsupported,
+    removed: prepared.removed,
     source: {
       kind: "prisma-schema",
       prismaVersion,
       schemaChecksum: schemaFile.checksum,
     },
+  };
+}
+
+/**
+ * Records a `schema.prisma` as the first version on main (the baseline). Later changes go
+ * through a branch: see uploadPrismaToBranch in lib/branches.ts.
+ */
+export async function importPrismaSchema(
+  actor: Actor,
+  project: Project,
+  text: string,
+): Promise<ImportResult & { removed: string[] }> {
+  assertCan(actor, "author-migrations");
+  requireSchemaSource(project, "code");
+  if ((await listVersions(actor, project)).length > 0) {
+    throw new UserFacingError(
+      "Main already has a version. Start a branch and upload the changed schema there, so the change is reviewed.",
+    );
+  }
+  const imported = await prismaSnapshot(text);
+  const result = await recordVersion(actor, project, {
+    snapshot: imported.snapshot,
+    unsupported: imported.unsupported,
+    source: imported.source,
+    basedOn: { versionId: null },
   });
-  return { ...result, removed: prepared.removed };
+  return { ...result, removed: imported.removed };
 }

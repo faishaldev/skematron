@@ -1,32 +1,35 @@
-// Migrations: the reviewed path from one schema version to another. Content lives in
-// immutable revisions (answers, plan and script artifacts, shadow verification); only the
-// status moves: draft → in_review → approved | rejected, and back to draft whenever a new
-// revision is made. An approval belongs to one exact revision and needs a second person:
+// Migrations: the review of a branch, from its base version to its head (lib/branches.ts
+// owns the workflow around it). Content lives in immutable revisions (answers, plan and
+// script artifacts, the head they planned towards, shadow verification); only the status
+// moves: draft → in_review → approved | rejected, and back to draft whenever the branch or
+// its answers change. An approval belongs to one exact revision and needs a second person:
 // an admin or owner who wrote neither the migration nor that revision.
 import {
   answersOf,
   openQuestions,
   planMigration,
+  serializeSnapshot,
   type Answer,
   type Answers,
   type MigrationPlan,
   type Risk,
+  type SchemaSnapshot,
 } from "@skematron/core";
-import { renderPostgresMigration } from "@skematron/adapters";
-import type { Prisma } from "../generated/prisma/client.ts";
+import {
+  renderPostgresMigration,
+  type UnsupportedObject,
+} from "@skematron/adapters";
+import type {
+  MigrationRevision as MigrationRevisionRow,
+  Prisma,
+} from "../generated/prisma/client.ts";
 import type { Actor } from "./actor.ts";
 import { recordAudit } from "./audit.ts";
 import { db } from "./db.ts";
-import { ForbiddenError, NotFoundError, UserFacingError } from "./errors.ts";
+import { ForbiddenError, UserFacingError } from "./errors.ts";
 import { assertCan, type Project } from "./projects.ts";
 import { verifyMigration } from "./shadow.ts";
-import {
-  artifacts,
-  getVersion,
-  loadSnapshot,
-  unsupportedOf,
-  type SchemaVersion,
-} from "./versions.ts";
+import { artifacts } from "./versions.ts";
 
 export type MigrationStatus = "draft" | "in_review" | "approved" | "rejected";
 
@@ -44,7 +47,6 @@ export interface RevisionSummary {
   destructive: number;
 }
 
-const MAX_TITLE = 120;
 const MAX_COMMENT = 2000;
 const MAX_BACKFILL = 1000;
 
@@ -58,48 +60,30 @@ export function summaryOf(revision: { summary: unknown }): RevisionSummary {
   return revision.summary as RevisionSummary;
 }
 
-export async function listMigrations(actor: Actor, project: Project) {
-  assertCan(actor, "read");
-  return db().migration.findMany({
-    where: { projectId: project.id },
-    orderBy: { number: "desc" },
-    include: {
-      fromVersion: { select: { number: true } },
-      toVersion: { select: { number: true } },
-    },
-  });
+/** A migration as loaded with its branch: revisions and reviews newest first. */
+export interface Migration {
+  id: string;
+  number: number;
+  status: string;
+  createdById: string;
+  revisions: MigrationRevision[];
+  reviews: {
+    id: string;
+    revisionId: string;
+    reviewerId: string;
+    verdict: string;
+    comment: string | null;
+    acknowledgedDestructive: boolean;
+    createdAt: Date;
+  }[];
 }
 
-export async function getMigration(
-  actor: Actor,
-  project: Project,
-  number: number,
-) {
-  assertCan(actor, "read");
-  const migration = Number.isSafeInteger(number)
-    ? await db().migration.findUnique({
-        where: { projectId_number: { projectId: project.id, number } },
-        include: {
-          fromVersion: true,
-          toVersion: true,
-          revisions: { orderBy: { number: "desc" } },
-          reviews: { orderBy: { createdAt: "desc" } },
-        },
-      })
-    : null;
-  if (migration === null)
-    throw new NotFoundError(`Migration ${number} not found.`);
-  return migration;
-}
+export type MigrationRevision = MigrationRevisionRow;
 
-export type Migration = Awaited<ReturnType<typeof getMigration>>;
-export type MigrationRevision = Migration["revisions"][number];
-
-export function latestRevision(migration: Migration): MigrationRevision {
-  const latest = migration.revisions[0];
-  if (latest === undefined)
-    throw new Error(`Migration ${migration.number} has no revision.`);
-  return latest;
+export function latestRevision(
+  migration: Pick<Migration, "revisions"> | null,
+): MigrationRevision | null {
+  return migration?.revisions[0] ?? null;
 }
 
 /** The stored plan and script of a revision, verified against their checksums. */
@@ -118,30 +102,37 @@ export async function loadRevision(
   };
 }
 
-/** Plans, renders, verifies and stores a revision's artifacts. Slow, so it runs before any lock. */
-async function prepareRevision(
-  fromVersion: SchemaVersion,
-  toVersion: SchemaVersion,
+/**
+ * Plans `from` → `to` with the answers, renders and test-runs the plan in the shadow
+ * database, and stores the plan, the script and `to` as artifacts. Slow, so it runs before
+ * any lock.
+ */
+export async function prepareRevision(
+  input: {
+    from: SchemaSnapshot;
+    fromUnsupported: readonly UnsupportedObject[];
+    to: SchemaSnapshot;
+  },
   answers: Answers,
 ) {
-  const [from, to] = await Promise.all([
-    loadSnapshot(fromVersion),
-    loadSnapshot(toVersion),
-  ]);
   // Unused answers are dropped: changing one answer can remove other questions.
-  const plan = planMigration(from, to, { answers, ignoreUnusedAnswers: true });
+  const plan = planMigration(input.from, input.to, {
+    answers,
+    ignoreUnusedAnswers: true,
+  });
   const { script } = renderPostgresMigration(plan);
   const verification = await verifyMigration({
-    from,
-    fromUnsupported: unsupportedOf(fromVersion),
+    from: input.from,
+    fromUnsupported: input.fromUnsupported,
     plan,
-    to,
+    to: input.to,
   });
   const store = artifacts();
   const encoder = new TextEncoder();
-  const [planArtifact, scriptArtifact] = await Promise.all([
+  const [planArtifact, scriptArtifact, toArtifact] = await Promise.all([
     store.put(encoder.encode(`${JSON.stringify(plan, null, 2)}\n`)),
     store.put(encoder.encode(script)),
+    store.put(encoder.encode(serializeSnapshot(input.to))),
   ]);
   const count = (risk: Risk) =>
     plan.operations.filter((planned) => planned.risk === risk).length;
@@ -157,6 +148,7 @@ async function prepareRevision(
       answers: answersOf(plan),
       planChecksum: planArtifact.checksum,
       scriptChecksum: scriptArtifact.checksum,
+      toChecksum: toArtifact.checksum,
       summary: { ...summary },
       openQuestions: openQuestions(plan).length,
       unsupportedChanges: plan.unsupported.length,
@@ -167,80 +159,12 @@ async function prepareRevision(
   };
 }
 
-export async function createMigration(
-  actor: Actor,
-  project: Project,
-  input: { from: number; to: number; title: string },
-) {
-  assertCan(actor, "author-migrations");
-  const [fromVersion, toVersion] = await Promise.all([
-    getVersion(actor, project, input.from),
-    getVersion(actor, project, input.to),
-  ]);
-  if (fromVersion.id === toVersion.id) {
-    throw new UserFacingError("Choose two different versions.");
-  }
-  const title =
-    input.title.trim() || `v${fromVersion.number} → v${toVersion.number}`;
-  if (title.length > MAX_TITLE) {
-    throw new UserFacingError(
-      `Keep the title to ${MAX_TITLE} characters or fewer.`,
-    );
-  }
-  const prepared = await prepareRevision(fromVersion, toVersion, {});
-  if (
-    prepared.plan.operations.length === 0 &&
-    prepared.plan.unsupported.length === 0
-  ) {
-    throw new UserFacingError(
-      `v${toVersion.number} is equivalent to v${fromVersion.number}: there is nothing to migrate.`,
-    );
-  }
-  const migration = await db().$transaction(async (tx) => {
-    await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${`migration-number:${project.id}`}, 0))`;
-    const latest = await tx.migration.findFirst({
-      where: { projectId: project.id },
-      orderBy: { number: "desc" },
-      select: { number: true },
-    });
-    return tx.migration.create({
-      data: {
-        projectId: project.id,
-        number: (latest?.number ?? 0) + 1,
-        title,
-        status: "draft",
-        fromVersionId: fromVersion.id,
-        toVersionId: toVersion.id,
-        createdById: actor.userId,
-        revisions: {
-          create: { number: 1, ...prepared.data, createdById: actor.userId },
-        },
-      },
-    });
-  });
-  await recordAudit({
-    organizationId: actor.organizationId,
-    actorId: actor.userId,
-    action: "migration.create",
-    targetType: "migration",
-    targetId: migration.id,
-    details: {
-      project: project.slug,
-      number: migration.number,
-      from: fromVersion.number,
-      to: toVersion.number,
-      verification: prepared.data.verification,
-    },
-  });
-  return migration;
-}
-
 /** Runs `work` while holding the migration's lock, with its current status and latest revision. */
 async function withMigrationLock<T>(
-  migration: Migration,
+  migration: Pick<Migration, "id">,
   work: (
     tx: Prisma.TransactionClient,
-    current: { status: MigrationStatus; latest: MigrationRevision },
+    current: { status: MigrationStatus; latest: MigrationRevision | null },
   ) => Promise<T>,
 ): Promise<T> {
   return db().$transaction(async (tx) => {
@@ -249,7 +173,7 @@ async function withMigrationLock<T>(
       where: { id: migration.id },
       select: { status: true },
     });
-    const latest = await tx.migrationRevision.findFirstOrThrow({
+    const latest = await tx.migrationRevision.findFirst({
       where: { migrationId: migration.id },
       orderBy: { number: "desc" },
     });
@@ -258,30 +182,33 @@ async function withMigrationLock<T>(
 }
 
 /**
- * Re-plans with new answers and records the result as the next revision. Any status goes
- * back to draft: an approval never carries over to different content.
+ * Records a prepared revision as the migration's next one and returns the migration to
+ * draft: an approval never carries over to different content. `stillCurrent` runs inside
+ * the lock and refuses the revision when what it was prepared from has changed since.
  */
-export async function reviseMigration(
+export async function addRevision(
   actor: Actor,
   project: Project,
-  migration: Migration,
-  answers: Answers,
-) {
-  assertCan(actor, "author-migrations");
-  const prepared = await prepareRevision(
-    migration.fromVersion,
-    migration.toVersion,
-    answers,
-  );
+  migration: Pick<Migration, "id" | "number">,
+  prepared: Awaited<ReturnType<typeof prepareRevision>>,
+  stillCurrent: (tx: Prisma.TransactionClient) => Promise<boolean>,
+): Promise<MigrationRevision> {
   const { revision, previous } = await withMigrationLock(
     migration,
     async (tx, current) => {
+      if (!(await stillCurrent(tx))) {
+        throw new UserFacingError(
+          "The branch changed while the test was running. Run the test again.",
+        );
+      }
       const created = await tx.migrationRevision.create({
         data: {
           migrationId: migration.id,
-          number: current.latest.number + 1,
+          number: (current.latest?.number ?? 0) + 1,
           ...prepared.data,
           createdById: actor.userId,
+          // The app's clock, like the branch's updatedAt it is compared with.
+          createdAt: new Date(),
         },
       });
       await tx.migration.update({
@@ -308,10 +235,12 @@ export async function reviseMigration(
   return revision;
 }
 
+/** `current`: the latest revision still matches the branch (the caller checks that). */
 export async function submitMigration(
   actor: Actor,
   project: Project,
-  migration: Migration,
+  migration: Pick<Migration, "id" | "number">,
+  current: (latest: MigrationRevision) => boolean,
 ): Promise<void> {
   assertCan(actor, "author-migrations");
   const revision = await withMigrationLock(
@@ -319,8 +248,16 @@ export async function submitMigration(
     async (tx, { status, latest }) => {
       if (status !== "draft") {
         throw new UserFacingError(
-          `Only a draft can be submitted; this migration is ${STATUS_LABELS[status]}.`,
+          `Only a draft can be submitted; this one is ${STATUS_LABELS[status]}.`,
         );
+      }
+      if (latest === null || !current(latest)) {
+        throw new UserFacingError(
+          "Run the test on the latest changes before submitting.",
+        );
+      }
+      if (summaryOf(latest).total === 0) {
+        throw new UserFacingError("There are no changes to submit yet.");
       }
       if (latest.openQuestions > 0) {
         throw new UserFacingError(
@@ -334,7 +271,7 @@ export async function submitMigration(
       }
       if (latest.verification !== "passed") {
         throw new UserFacingError(
-          "The shadow database check has not passed for the latest revision.",
+          "The test run has not passed for the latest changes.",
         );
       }
       await tx.migration.update({
@@ -366,11 +303,13 @@ export interface ReviewInput {
   acknowledgeDestructive: boolean;
 }
 
+/** `authorIds`: everyone who worked on the change; none of them may review it. */
 export async function reviewMigration(
   actor: Actor,
   project: Project,
-  migration: Migration,
+  migration: Pick<Migration, "id" | "number" | "createdById">,
   input: ReviewInput,
+  authorIds: readonly string[],
 ): Promise<void> {
   assertCan(actor, "review-migrations");
   const comment = input.comment.trim();
@@ -380,27 +319,28 @@ export async function reviewMigration(
     );
   }
   if (input.verdict === "rejected" && comment === "") {
-    throw new UserFacingError("Say why you are rejecting the migration.");
+    throw new UserFacingError("Say why you are rejecting the changes.");
   }
   const revision = await withMigrationLock(
     migration,
     async (tx, { status, latest }) => {
       if (status !== "in_review") {
         throw new UserFacingError(
-          `Only a migration in review can be approved or rejected; this one is ${STATUS_LABELS[status]}.`,
+          `Only changes in review can be approved or rejected; these are ${STATUS_LABELS[status]}.`,
         );
       }
-      if (latest.id !== input.revisionId) {
+      if (latest === null || latest.id !== input.revisionId) {
         throw new UserFacingError(
-          "The migration changed after you opened it. Review the new revision.",
+          "The branch changed after you opened it. Review the new revision.",
         );
       }
       if (
         actor.userId === migration.createdById ||
-        actor.userId === latest.createdById
+        actor.userId === latest.createdById ||
+        authorIds.includes(actor.userId)
       ) {
         throw new ForbiddenError(
-          "You cannot review a migration you wrote; another admin or owner has to.",
+          "You cannot review changes you wrote; another admin or owner has to.",
         );
       }
       const destructive = summaryOf(latest).destructive;

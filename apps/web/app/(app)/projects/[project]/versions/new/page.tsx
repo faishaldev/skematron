@@ -5,8 +5,10 @@ import { MAX_PRISMA_SCHEMA_BYTES } from "../../../../../../lib/prisma-import.ts"
 import { getProject } from "../../../../../../lib/projects.ts";
 import { can } from "../../../../../../lib/roles.ts";
 import { requireActor } from "../../../../../../lib/session.ts";
+import { listVersions } from "../../../../../../lib/versions.ts";
 import {
   Breadcrumbs,
+  Callout,
   ErrorPanel,
   Flash,
   PageHeader,
@@ -34,18 +36,46 @@ export default async function NewVersionPage({
       <ErrorPanel title="Not allowed" error="Viewers cannot import schemas." />
     );
   }
+  const crumbs = (
+    <Breadcrumbs
+      items={[
+        { label: "Projects", href: "/projects" },
+        { label: project.name, href: `/projects/${project.slug}` },
+        { label: "Import schema.prisma" },
+      ]}
+    />
+  );
+  const latest = (await listVersions(actor, project))[0];
+  if (latest !== undefined) {
+    return (
+      <>
+        {crumbs}
+        <PageHeader title="Import schema.prisma" />
+        <Callout
+          title={`Main already starts at v1 (now v${latest.number})`}
+          actions={
+            <Link
+              href={`/projects/${project.slug}/branches/new`}
+              className="button primary"
+            >
+              New branch
+            </Link>
+          }
+        >
+          <p>
+            Changes go through a branch: start one, upload the changed
+            schema.prisma there, test it and get it reviewed, then merge it.
+          </p>
+        </Callout>
+      </>
+    );
+  }
   return (
     <>
-      <Breadcrumbs
-        items={[
-          { label: "Projects", href: "/projects" },
-          { label: project.name, href: `/projects/${project.slug}` },
-          { label: "Import schema.prisma" },
-        ]}
-      />
+      {crumbs}
       <PageHeader
         title="Import schema.prisma"
-        subtitle={`Upload your Prisma schema to record it as the next version of ${project.name}. Prisma itself turns it into SQL, which runs in a temporary database; no database of yours is touched.`}
+        subtitle={`Upload your current Prisma schema. It becomes v1 on main, the starting point of ${project.name}; later changes go through branches. Prisma itself turns it into SQL, which runs in a temporary database; no database of yours is touched.`}
       />
       <Flash searchParams={searchParams} />
       <form

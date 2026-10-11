@@ -27,44 +27,50 @@ Status as of 2026-10-10: pre-alpha.
   | --- | --- | --- | --- | --- |
   | View projects, versions, compare, export | ✓ | ✓ | ✓ | ✓ |
   | Import versions, test connections, check drift | | ✓ | ✓ | ✓ |
-  | Import `schema.prisma`; edit the schema in the dashboard; create, answer and submit migrations | | ✓ | ✓ | ✓ |
+  | Import the baseline; start, change, test, submit, rebase, merge and close branches | | ✓ | ✓ | ✓ |
   | Change a project's schema source | | | ✓ | ✓ |
-  | Approve or reject migrations (never ones they wrote) | | | ✓ | ✓ |
+  | Approve or reject branches (never ones they worked on) | | | ✓ | ✓ |
   | Create and edit projects and environments | | | ✓ | ✓ |
   | Invite members, change roles, remove members, view the audit log | | | ✓ | ✓ |
 
   Nobody can assign the owner role or change the owner.
-- **Projects** contain **environments** and **schema versions**.
+- **Projects** contain **environments**, **main** (the numbered, immutable schema versions) and **branches**.
   - An environment is a database target. Its URL is stored only encrypted; `connectionHint` is the redacted form.
-  - Importing introspects the environment's tracked schemas, read-only:
-    - The snapshot is stored as an artifact.
-    - A `schema_version` row is added, numbered per project under an advisory lock.
-    - An import identical to the latest version creates nothing.
-  - A `schema.prisma` import (`lib/prisma-import.ts`) makes a version too:
-    - `preparePrismaSchema` removes connection URLs.
-    - The Prisma CLI (`migrate diff --from-empty`) produces DDL, which runs in a shadow database.
-    - Introspecting the shadow database gives the snapshot. The prepared schema file is stored as an artifact (`source.schemaChecksum`).
-- **Schema source** (`project.schemaSource`):
-  - "code": versions come from a `schema.prisma` upload or an environment import.
-  - "dashboard": versions come from the schema editor.
+  - Versions are stored as artifacts and recorded as `schema_version` rows, numbered per project under an advisory lock (`lib/versions.ts`).
+- **Main grows in two ways only:**
+  - **The baseline (v1):**
+    - a `schema.prisma` import (`lib/prisma-import.ts`), or
+    - the first import from an environment (`importEnvironment` in `lib/branches.ts`).
+  - **Merged branches**, for everything after that.
 
-  Prisma import works only for "code", and the editor only for "dashboard". Environment imports work for both.
-- **The schema editor** (`lib/schema-drafts.ts`, `/projects/[project]/schema`):
-  - Each person has a private **draft** per project (`schema_draft`), started from the latest version.
-  - Each edit is applied with core's edit functions (`edit.ts`). The whole draft is then rebuilt in a shadow database and introspected (`normalizeSnapshot`), so it holds what PostgreSQL really creates.
-  - Typed fragments are first checked by `lib/schema-input.ts`.
-  - Saving records the draft through `recordVersion` with `basedOn`. Under the version lock, it is refused when another version was saved since the draft started. The draft is then deleted.
-- **Migrations** (`lib/migrations.ts`) go from one version to another, numbered per project (M1, M2, …):
-  - **Content lives in immutable revisions.** Each revision stores:
+  Later environment imports that differ from main become a new branch named `from-<environment>`, and an import equal to main creates nothing.
+- **Branches** (`lib/branches.ts`, `branch` table):
+  - **Contents:** a branch starts from the latest version on main (its base) with a copy of its schema (its head).
+  - **Changing the head:**
+    - The schema editor, for "dashboard" projects. Core's edit functions apply each edit (`lib/schema-edits.ts`, `edit.ts`), then `normalizeSnapshot` rebuilds the head in a shadow database.
+    - Uploading a `schema.prisma`, for "code" projects: Prisma CLI, then shadow database.
+  - Every change is refused if the branch changed since it was loaded (optimistic check on `updatedAt`), and sends the review back to draft.
+  - **Shared:** the team sees branches, and members can edit them. Everyone who changes, rebases or tests a branch is recorded in `contributorIds`.
+  - **Merge** records the head as the next version, in the same transaction as the branch's status change. It needs:
+    - an approval of the latest test run, made after the branch's last change, for exactly this head (`toChecksum`)
+    - main still at the branch's base
+  - **Rebase** moves the base to the latest version. The head stays, so anything that would undo newer work on main shows up in the list. **Close** ends the branch without recording anything.
+- **Schema source** (`project.schemaSource`):
+  - "code": the baseline and branch contents come from `schema.prisma` uploads (or environment imports).
+  - "dashboard": branch contents come from the schema editor.
+
+  Prisma uploads work only for "code", and the editor only for "dashboard".
+- **Migrations** (`lib/migrations.ts`) are the review of a branch (one per branch), from its base to its head:
+  - **Content lives in immutable revisions.** Each test run makes one, and each stores:
     - the answers
-    - the plan JSON and the SQL script, as artifacts
+    - the plan JSON, the SQL script and the head it planned towards, as artifacts
     - a risk summary
     - counts of open questions and unsupported changes
     - the shadow verification result: `passed`, `failed` or `unavailable`
-  - **Status:** draft → in_review → approved or rejected. A new revision always returns the migration to draft.
-  - **Submit** needs no open questions, no unsupported changes, and a passed verification.
+  - **Status:** draft → in_review → approved or rejected. Any change to the branch, or a new test run, returns it to draft.
+  - **Submit** needs changes, no open questions, no unsupported changes, and a passed test run made after the branch's last change.
   - **Review:**
-    - Only an admin or owner who wrote neither the migration nor the revision may approve or reject.
+    - Only an admin or owner who did not work on the branch may approve or reject.
     - Approving destructive operations needs an explicit acknowledgment. Rejecting needs a comment.
     - The reviewer approves the exact revision they saw.
 - **The shadow database** (`lib/shadow.ts`, `SKEMATRON_SHADOW_DATABASE_URL`) is a dedicated, disposable server:
@@ -74,9 +80,9 @@ Status as of 2026-10-10: pre-alpha.
   - `/projects`, `/projects/[project]`
   - `/projects/[project]/environments/{new,[environment]}`
   - `/projects/[project]/versions/[n]`, with `export.sql` and `snapshot.json` downloads, and `schema.prisma` for Prisma imports
-  - `/projects/[project]/versions/new`: import a `schema.prisma`
-  - `/projects/[project]/schema`: the schema editor
-  - `/projects/[project]/migrations/new`, `/projects/[project]/migrations/[n]` (with a `migration.sql` download)
+  - `/projects/[project]/versions/new`: import the baseline `schema.prisma`
+  - `/projects/[project]/branches/new`, `/projects/[project]/branches/[name]` (changes, questions, test run, review, merge, rebase, close; `migration.sql` download)
+  - `/projects/[project]/branches/[name]/edit` (schema editor) and `/projects/[project]/branches/[name]/upload` (`schema.prisma`)
   - `/projects/[project]/compare?from=&to=` between two versions, or `?from=&environment=` for drift
   - `/settings/members`, `/settings/audit`
 - **Server modules (`apps/web/lib`):**
@@ -88,8 +94,9 @@ Status as of 2026-10-10: pre-alpha.
   - `targets.ts`: the only module that decrypts environment URLs and connects to user databases (read-only)
   - `shadow.ts`: temporary databases on the shadow server, `snapshotFromDdl`, `verifyMigration`
   - `prisma-import.ts`: runs the Prisma CLI in a temporary directory with a minimal environment
-  - `migrations.ts`: the migration workflow and review rules
-  - `schema-drafts.ts`: the editor's drafts; `schema-input.ts`: checks for typed names, types and defaults
+  - `branches.ts`: the branch workflow (create, edit, upload, import from a database, test, submit, review, rebase, merge, close)
+  - `migrations.ts`: revisions, test runs and the review rules
+  - `schema-edits.ts`: editor edits as data; `schema-input.ts`: checks for typed names, types and defaults
   - `versions.ts`
   - `audit.ts`
   - `secrets.ts`, `connections.ts`, `roles.ts`, `slugs.ts`
@@ -101,7 +108,7 @@ Status as of 2026-10-10: pre-alpha.
 - **What it is:** PostgreSQL with Prisma 7. The schema is `prisma/schema.prisma`, migrations are in `prisma/migrations`, and the config is `prisma.config.ts`. The generated client goes to `apps/web/generated/prisma`.
 - **Tables:**
   - Better Auth: `user`, `session`, `account`, `verification`, `organization`, `member`, `invitation`.
-  - Skematron: `installation`, `project`, `environment`, `schema_version`, `schema_draft`, `migration`, `migration_revision`, `migration_review`, `audit_event`.
+  - Skematron: `installation`, `project`, `environment`, `schema_version`, `branch`, `migration`, `migration_revision`, `migration_review`, `audit_event`.
 - **Artifacts** live outside the database, in `SKEMATRON_ARTIFACT_DIR`. Back up the database, the artifacts and `SKEMATRON_SECRET_KEY` together.
 
 ## Data flow

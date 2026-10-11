@@ -8,7 +8,7 @@
 - **Web app tests** live in `apps/web/lib/*.test.ts`:
   - Pure modules: `policy.test.ts`.
   - The metadata layer: `metadata.integration.test.ts`.
-  - Shadow databases, Prisma import and the migration workflow: `migrations.integration.test.ts`.
+  - Shadow databases, Prisma import and the branch workflow: `branches.integration.test.ts`.
   - Shared setup is in `test-support.ts`.
   - Use temporary directories, never `.local/artifacts`.
 - SQL fixtures live in `packages/adapters/src/postgres/fixtures/` and use `__SCHEMA__` for the schema name.

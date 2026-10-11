@@ -9,8 +9,10 @@ A self-hostable control plane for database schemas and migrations. It imports, v
   - Projects, and database environments with encrypted credentials.
   - Immutable schema versions, imported read-only from a database or from a Prisma `schema.prisma`.
   - Version compare, drift checks, SQL/JSON export, and an audit log.
-  - A schema editor: add tables, columns, indexes and foreign keys in the browser, for projects whose schema is written in the dashboard.
-  - Migrations: planned between two versions, with questions instead of guesses (renames, values for existing rows), checked in a throwaway shadow database, and approved by a second person.
+  - Branches: every change after the first version is a branch.
+    - Its content comes from the schema editor, or from an uploaded `schema.prisma`.
+    - Skematron asks instead of guessing (renames, values for existing rows) and test-runs the change in a throwaway shadow database.
+    - A second person approves it. Then it is merged into main as the next version, or closed.
 - **`@skematron/core`**
   - The schema snapshot model.
   - Canonical JSON with SHA-256 checksums.
@@ -62,15 +64,13 @@ pnpm web
      ```
 
   5. On the project page, compare v1 with v2. You get the migration between them, with each statement marked safe, caution or destructive.
-- **To try the schema editor:**
-  1. Create a project and choose **Schema written in the dashboard**. Admins can also switch an existing project on its page.
-  2. Click **Edit schema**, then **Start editing**. Add a table, then some columns. PostgreSQL checks every change.
-  3. Click **Save as v1**. Edit again, save as v2, and create the migration between them.
-- **To try migrations with a Prisma schema:**
-  1. In a project, click **Import schema.prisma** and upload `packages/adapters/src/prisma/fixtures/v1.prisma`. Then import `v2.prisma` from the same folder.
-  2. Click **New migration** and create one from v1 to v2.
-  3. Answer the two questions: `fullName` was renamed to `displayName`, and existing posts get a `slug` value. Save, and the shadow check runs again.
-  4. Submit it for review. Another admin or owner approves it; you cannot approve your own. Invite a second account to try this.
+- **To try branches with a Prisma schema:**
+  1. Create a project with the schema written **in code**. Click **Import schema.prisma** and upload `packages/adapters/src/prisma/fixtures/v1.prisma`. It becomes v1 on main.
+  2. Click **New branch**, name it, and upload `v2.prisma` from the same folder.
+  3. Answer the two questions: `fullName` was renamed to `displayName`, and existing posts get a `slug` value. Click **Save answers and test**.
+  4. Submit it for review. An admin or owner who did not work on the branch approves it; invite a second account to try this.
+  5. Click **Merge into main as v2**. To abandon a branch instead, use **Close branch**: nothing reaches main.
+- **To try the schema editor:** create a project with the schema written **in Skematron**, click **New branch**, add tables and columns, then test, review and merge it the same way.
 
   Prisma import and migration checks need `SKEMATRON_SHADOW_DATABASE_URL`, which `pnpm db:start` adds to `.env`. Restart `pnpm web` after it is added.
 

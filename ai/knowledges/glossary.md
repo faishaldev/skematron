@@ -56,16 +56,26 @@
 
 **Answer.** A person's decision on a question: `rename` to a candidate or `drop`; a backfill `value` or `skip`. Answers are keyed by question id and stored with each migration revision.
 
-**Migration.** A reviewed change from one version to another in a project (M1, M2, …), with a status: draft, in review, approved or rejected.
+**Main.** A project's line of immutable, numbered schema versions (v1, v2, …): the agreed schema. After the baseline, it grows only by merging branches.
 
-**Revision.** One immutable state of a migration: its answers, the plan and SQL script (artifacts), the risk summary and the shadow verification result. Changing an answer makes a new revision.
+**Baseline.** The first version on main, imported from a `schema.prisma` or a database. It is the only version that does not come from a branch.
+
+**Branch.** A proposed change to the schema, shared with the team. It starts from the latest version on main (its base) with a copy of its schema (its head), which people change with the schema editor or by uploading a `schema.prisma`. It is open until it is merged or closed.
+
+**Merge.** Recording an approved branch's head as the next version on main. It is refused if main moved on, or if the branch changed after its approval.
+
+**Rebase.** Moving a branch's base to the latest version on main, when main moved on while the branch was open. The head stays, so the changes are shown against the newer version and need a new test and review.
+
+**Close.** Ending a branch without recording anything on main.
+
+**Migration.** The review of a branch: the change from its base to its head, with a status: draft, in review, approved or rejected. Each test run adds a revision.
+
+**Revision.** One immutable test run of a branch: its answers, the plan, the SQL script and the head it planned towards (artifacts), the risk summary and the shadow verification result.
 
 **Shadow database.** A temporary `skematron_shadow_*` database on a dedicated server (`SKEMATRON_SHADOW_DATABASE_URL`), where Skematron runs Prisma's DDL and checks migration plans. It is dropped after each run and never holds user data.
 
 **Verification.** Recreating the `from` version in a shadow database, running a plan there statement by statement, and checking that the result matches the `to` version. Result: passed, failed or unavailable. The dashboard calls it the "test run".
 
-**Four-eyes review.** A migration is approved or rejected by an admin or owner who wrote neither the migration nor the revision under review.
+**Four-eyes review.** A branch is approved or rejected by an admin or owner who did not work on it (did not create, change, rebase or test it).
 
-**Schema source.** Where a project's schema is written: "code" (a `schema.prisma`, or the database itself; versions are imported) or "dashboard" (the schema editor; versions are saved from it). One project has one source, so there are never two sources of truth.
-
-**Draft.** One person's private working copy of a project's schema in the dashboard editor. It changes with every edit, is normalized through the shadow database each time, and becomes a version when saved.
+**Schema source.** Where a project's schema is written: "code" (a `schema.prisma`, or the database itself; branches get uploads) or "dashboard" (branches are changed in the schema editor). One project has one source, so there are never two sources of truth.

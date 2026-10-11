@@ -1,35 +1,32 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import type { ReactNode } from "react";
-import { planMigration, type SchemaSnapshot } from "@skematron/core";
-import type { UnsupportedObject } from "@skematron/adapters";
-import { NotFoundError } from "../../../../../lib/errors.ts";
-import { getProject, schemaSourceOf } from "../../../../../lib/projects.ts";
-import { can } from "../../../../../lib/roles.ts";
 import {
-  baseSnapshot,
-  draftSnapshot,
-  getDraft,
-} from "../../../../../lib/schema-drafts.ts";
-import { requireActor } from "../../../../../lib/session.ts";
-import { listVersions } from "../../../../../lib/versions.ts";
-import { PlanView } from "../../../../components/plan-view.tsx";
-import { SchemaView } from "../../../../components/schema-view.tsx";
+  baseOf,
+  branchStatusOf,
+  getBranch,
+  headOf,
+  headUnsupportedOf,
+} from "../../../../../../../lib/branches.ts";
+import { NotFoundError } from "../../../../../../../lib/errors.ts";
+import { planMigration } from "@skematron/core";
+import {
+  getProject,
+  schemaSourceOf,
+} from "../../../../../../../lib/projects.ts";
+import { can } from "../../../../../../../lib/roles.ts";
+import { requireActor } from "../../../../../../../lib/session.ts";
+import { PlanView } from "../../../../../../components/plan-view.tsx";
+import { SchemaView } from "../../../../../../components/schema-view.tsx";
 import {
   Breadcrumbs,
-  Callout,
   ErrorPanel,
   Flash,
   PageHeader,
   plural,
   type SearchParams,
-} from "../../../../components/ui.tsx";
-import {
-  discardDraftAction,
-  editSchemaAction,
-  saveDraftAction,
-  startDraftAction,
-} from "./actions.ts";
+} from "../../../../../../components/ui.tsx";
+import { editBranchAction } from "../../actions.ts";
 
 export const dynamic = "force-dynamic";
 
@@ -64,10 +61,19 @@ function TablePicker({
   );
 }
 
-function Hidden({ project, edit }: { project: string; edit: string }) {
+function Hidden({
+  project,
+  branch,
+  edit,
+}: {
+  project: string;
+  branch: string;
+  edit: string;
+}) {
   return (
     <>
       <input type="hidden" name="project" value={project} />
+      <input type="hidden" name="branch" value={branch} />
       <input type="hidden" name="edit" value={edit} />
     </>
   );
@@ -91,26 +97,33 @@ function Panel({
   );
 }
 
-export default async function SchemaEditorPage({
+export default async function EditBranchPage({
   params,
   searchParams,
 }: {
-  params: Promise<{ project: string }>;
+  params: Promise<{ project: string; name: string }>;
   searchParams: SearchParams;
 }) {
   const actor = await requireActor();
-  const { project: slug } = await params;
-  const project = await getProject(actor, slug).catch((error: unknown) => {
+  const { project: slug, name } = await params;
+  let loaded;
+  try {
+    const project = await getProject(actor, slug);
+    loaded = { project, branch: await getBranch(actor, project, name) };
+  } catch (error) {
     if (error instanceof NotFoundError) notFound();
     throw error;
-  });
+  }
+  const { project, branch } = loaded;
   const base = `/projects/${project.slug}`;
+  const here = `${base}/branches/${branch.name}`;
   const crumbs = (
     <Breadcrumbs
       items={[
         { label: "Projects", href: "/projects" },
         { label: project.name, href: base },
-        { label: "Edit schema" },
+        { label: branch.name, href: here },
+        { label: "Edit" },
       ]}
     />
   );
@@ -128,64 +141,29 @@ export default async function SchemaEditorPage({
         {crumbs}
         <ErrorPanel
           title="This schema is written in code"
-          error="Change it in your code or database, then import a version. An admin can switch the project's schema source to the dashboard on the project page."
+          error="Upload the changed schema.prisma to the branch instead. An admin can switch the project to the schema editor in its settings."
         />
       </>
     );
   }
-  const [draft, versions] = await Promise.all([
-    getDraft(actor, project),
-    listVersions(actor, project),
-  ]);
-  const latest = versions[0];
-
-  if (draft === null) {
+  if (branchStatusOf(branch) !== "open") {
     return (
       <>
         {crumbs}
-        <PageHeader
-          title="Edit schema"
-          subtitle="Add tables, columns, indexes and links between tables. Nothing touches your databases."
+        <ErrorPanel
+          title={`This branch is ${branchStatusOf(branch)}`}
+          error="It can no longer change. Start a new branch for further changes."
         />
-        <Flash searchParams={searchParams} />
-        <Callout
-          title={
-            latest === undefined
-              ? "Start your schema"
-              : `Start editing from v${latest.number}`
-          }
-          actions={
-            <form action={startDraftAction}>
-              <input type="hidden" name="project" value={project.slug} />
-              <button type="submit" className="primary">
-                Start editing
-              </button>
-            </form>
-          }
-        >
-          <ol style={{ margin: "4px 0 0", paddingLeft: 20 }}>
-            <li>Your changes go into a private draft that only you see.</li>
-            <li>
-              PostgreSQL checks every change in a temporary database, so
-              mistakes show up right away.
-            </li>
-            <li>
-              When you are done, save the draft as v{(latest?.number ?? 0) + 1},
-              then create the migration that brings your databases there.
-            </li>
-          </ol>
-        </Callout>
       </>
     );
   }
 
-  const snapshot: SchemaSnapshot = draftSnapshot(draft);
-  const plan = planMigration(await baseSnapshot(draft), snapshot);
-  const stale = (latest?.id ?? null) !== draft.baseVersionId;
+  const snapshot = headOf(branch);
+  const plan = planMigration((await baseOf(branch)).snapshot, snapshot);
   const baseLabel =
-    draft.baseVersion === null
+    branch.baseVersion === null
       ? "an empty schema"
-      : `v${draft.baseVersion.number}`;
+      : `v${branch.baseVersion.number}`;
   const tables = snapshot.namespaces.flatMap((namespace) =>
     namespace.tables.map((table) => ({
       value: JSON.stringify([namespace.name, table.name]),
@@ -200,52 +178,27 @@ export default async function SchemaEditorPage({
     namespace.enums.map((enumType) => `${namespace.name}.${enumType.name}`),
   );
   const changeCount = plan.operations.length;
-  const nextVersion = (latest?.number ?? 0) + 1;
 
   return (
     <>
       {crumbs}
       <PageHeader
-        title="Edit schema"
+        title={`Edit ${branch.name}`}
         badge={
           <span className="badge info">
             {changeCount === 0
               ? "No changes yet"
-              : `${plural(changeCount, "unsaved change")}`}
+              : plural(changeCount, "change")}
           </span>
         }
-        subtitle={`Your private draft, based on ${baseLabel}. PostgreSQL checks every change in a temporary database; nothing touches your databases.`}
+        subtitle={`Changes compared with ${baseLabel} on main. Everyone on the team can edit this branch; PostgreSQL checks every change in a temporary database, and nothing touches your databases.`}
         actions={
-          <>
-            <form action={discardDraftAction}>
-              <input type="hidden" name="project" value={project.slug} />
-              <button type="submit" className="danger">
-                Discard draft
-              </button>
-            </form>
-            <form action={saveDraftAction}>
-              <input type="hidden" name="project" value={project.slug} />
-              <button
-                type="submit"
-                className="primary"
-                disabled={stale || changeCount === 0}
-              >
-                Save as v{nextVersion}
-              </button>
-            </form>
-          </>
+          <Link href={here} className="button primary">
+            Done: test and review
+          </Link>
         }
       />
       <Flash searchParams={searchParams} />
-      {stale && (
-        <Callout tone="danger" title="Someone saved a newer version">
-          <p>
-            v{latest?.number} was saved after this draft started from{" "}
-            {baseLabel}, so this draft cannot be saved anymore. Discard it and
-            start again from v{latest?.number}.
-          </p>
-        </Callout>
-      )}
 
       <datalist id="column-types">
         {[...COMMON_TYPES, ...enumTypes].map((type) => (
@@ -260,26 +213,26 @@ export default async function SchemaEditorPage({
 
       <div className="split">
         <div>
-          <h2 style={{ marginTop: 8 }}>Your changes</h2>
+          <h2 style={{ marginTop: 8 }}>Changes in this branch</h2>
           <PlanView
             plan={plan}
-            emptyMessage={`No changes yet: the draft is the same as ${baseLabel}. Use the panel on the right to add something.`}
+            emptyMessage={`No changes yet: the branch is the same as ${baseLabel}. Use the panel on the right to add something.`}
           />
-          <h2>Schema in this draft</h2>
+          <h2>Schema in this branch</h2>
           <SchemaView
             snapshot={snapshot}
-            unsupported={
-              (Array.isArray(draft.unsupported)
-                ? draft.unsupported
-                : []) as unknown as UnsupportedObject[]
-            }
+            unsupported={headUnsupportedOf(branch)}
           />
         </div>
 
         <aside className="accordion">
           <Panel title="Add a table" open={tables.length === 0}>
-            <form action={editSchemaAction} className="stack">
-              <Hidden project={project.slug} edit="add-table" />
+            <form action={editBranchAction} className="stack">
+              <Hidden
+                project={project.slug}
+                branch={branch.name}
+                edit="add-table"
+              />
               <label>
                 Table name
                 <input
@@ -328,8 +281,12 @@ export default async function SchemaEditorPage({
 
           {tables.length > 0 && (
             <Panel title="Add a column" open>
-              <form action={editSchemaAction} className="stack">
-                <Hidden project={project.slug} edit="add-column" />
+              <form action={editBranchAction} className="stack">
+                <Hidden
+                  project={project.slug}
+                  branch={branch.name}
+                  edit="add-column"
+                />
                 <label>
                   Table
                   <TablePicker name="table" tables={tables} />
@@ -376,8 +333,12 @@ export default async function SchemaEditorPage({
 
           {tables.length > 0 && (
             <Panel title="Link two tables (foreign key)" open={false}>
-              <form action={editSchemaAction} className="stack">
-                <Hidden project={project.slug} edit="add-foreign-key" />
+              <form action={editBranchAction} className="stack">
+                <Hidden
+                  project={project.slug}
+                  branch={branch.name}
+                  edit="add-foreign-key"
+                />
                 <label>
                   Table
                   <TablePicker name="table" tables={tables} />
@@ -425,8 +386,12 @@ export default async function SchemaEditorPage({
 
           {tables.length > 0 && (
             <Panel title="Speed up lookups (index)" open={false}>
-              <form action={editSchemaAction} className="stack">
-                <Hidden project={project.slug} edit="add-index" />
+              <form action={editBranchAction} className="stack">
+                <Hidden
+                  project={project.slug}
+                  branch={branch.name}
+                  edit="add-index"
+                />
                 <label>
                   Table
                   <TablePicker name="table" tables={tables} />
@@ -454,8 +419,7 @@ export default async function SchemaEditorPage({
             </Panel>
           )}
           <p className="hint">
-            Removing or renaming things in the editor is not supported yet.{" "}
-            <Link href={base}>Back to {project.name}</Link>
+            Removing or renaming things in the editor is not supported yet.
           </p>
         </aside>
       </div>
