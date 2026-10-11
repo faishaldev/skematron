@@ -44,7 +44,7 @@ export default async function MembersPage({
     <>
       <PageHeader
         title="Members"
-        subtitle="Who can use this Skematron. Viewers read; members import schemas and write migrations; admins also review migrations, manage projects and invite people."
+        subtitle="Who can use this Skematron. Viewers read; members start, change and merge branches; admins also review branches, manage projects and databases, and invite people."
       />
       <Flash searchParams={searchParams} />
       <div className="card flush">
@@ -131,8 +131,8 @@ export default async function MembersPage({
       </form>
       <p className="hint">
         No email is sent: copy the invitation link and share it yourself. Roles:
-        viewer (read only), member (+ import schemas, write migrations), admin
-        (+ review migrations, projects, databases, members).
+        viewer (read only), member (+ branches), admin (+ reviews, projects,
+        databases, members).
       </p>
 
       <h2>Pending invitations</h2>

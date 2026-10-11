@@ -26,7 +26,11 @@ export async function listProjects(actor: Actor) {
     orderBy: { name: "asc" },
     include: {
       _count: {
-        select: { environments: true, versions: true, migrations: true },
+        select: {
+          environments: true,
+          versions: true,
+          branches: { where: { status: "open" } },
+        },
       },
     },
   });

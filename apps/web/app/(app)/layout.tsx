@@ -23,6 +23,7 @@ export default async function AppLayout({ children }: { children: ReactNode }) {
           projects={projects.map((project) => ({
             slug: project.slug,
             name: project.name,
+            openBranches: project._count.branches,
           }))}
           user={{ name: actor.name, role: actor.role }}
           canManageProjects={can(actor.role, "manage-projects")}

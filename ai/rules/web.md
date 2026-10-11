@@ -69,7 +69,9 @@ Read before changing anything in `apps/web/`. These rules add to AGENTS.md and n
 ## Pages and wording
 
 - **Navigation lives in the sidebar** (`app/(app)/layout.tsx`, `components/sidebar-nav.tsx`):
-  - It lists the projects. The current project opens its sections: Overview, Branches, Main versions, Diagram, Databases and Settings.
+  - At the top is a project switcher: a native `<details>` menu with the projects, All projects and New project.
+  - Below it are the current project's sections, with icons from `components/icons.tsx`: Overview, Branches (with the number of open branches), Main versions, Diagram, Databases and Settings.
+  - Then the Workspace group (All projects, Members, Audit log), then the account.
   - Give a new project-level area its own page under `projects/[project]/` and a sidebar entry, rather than another section on the overview.
   - Pages load the project with `resolveProject` (`lib/project-pages.ts`).
 - **Show the schema as a diagram first** (`components/diagram.tsx`, `SchemaDiagram`):

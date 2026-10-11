@@ -952,29 +952,27 @@ a.project-card h3 {
   text-transform: uppercase;
   letter-spacing: 0.06em;
   color: var(--muted);
-  padding: 0 8px 4px;
+  padding: 0 10px 4px;
 }
 
 .side-link {
-  display: block;
-  padding: 6px 8px;
-  border-radius: 6px;
-  color: var(--text);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 10px;
+  border-radius: 7px;
+  color: var(--muted);
   font-size: 14px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+}
+
+.side-link .icon {
+  flex: none;
 }
 
 .side-link:hover {
   background: var(--surface-2);
+  color: var(--text);
   text-decoration: none;
-}
-
-.side-link.sub {
-  padding-left: 22px;
-  color: var(--muted);
-  font-size: 13.5px;
 }
 
 .side-link.active {
@@ -983,25 +981,192 @@ a.project-card h3 {
   font-weight: 600;
 }
 
-.side-empty {
-  padding: 6px 8px;
-  font-size: 13px;
+.side-label {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.side-count {
+  min-width: 20px;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: var(--accent);
+  color: var(--accent-text);
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 18px;
+  text-align: center;
+}
+
+/* Project switcher: a native <details> menu. */
+.switcher {
+  position: relative;
+}
+
+.switcher > summary {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  background: var(--surface-2);
+  color: var(--text);
+  list-style: none;
+}
+
+.switcher > summary::-webkit-details-marker {
+  display: none;
+}
+
+.switcher > summary:hover {
+  border-color: var(--accent);
+  color: var(--text);
+}
+
+.switcher[open] > summary {
+  border-color: var(--accent);
+}
+
+.switcher[open] > summary .icon {
+  transform: rotate(180deg);
+}
+
+.switcher-mark {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 28px;
+  height: 28px;
+  border-radius: 7px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-weight: 700;
+  font-size: 14px;
+}
+
+.switcher-mark.small {
+  width: 22px;
+  height: 22px;
+  font-size: 12px;
+  border-radius: 6px;
+}
+
+.switcher-text {
+  display: grid;
+  flex: 1;
+  min-width: 0;
+}
+
+.switcher-caption {
+  font-size: 11px;
   color: var(--muted);
+}
+
+.switcher-name {
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.switcher-menu {
+  position: absolute;
+  z-index: 10;
+  top: calc(100% + 6px);
+  left: 0;
+  right: 0;
+  display: grid;
+  gap: 2px;
+  padding: 6px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow: 0 8px 24px rgb(16 24 40 / 0.16);
+  max-height: 60vh;
+  overflow-y: auto;
+}
+
+.switcher-menu a {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 8px;
+  border-radius: 7px;
+  color: var(--text);
+  font-size: 14px;
+}
+
+.switcher-menu a:hover {
+  background: var(--surface-2);
+  text-decoration: none;
+}
+
+.switcher-menu a.active {
+  font-weight: 600;
+}
+
+.switcher-heading {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+  padding: 4px 8px;
+}
+
+.switcher-divider {
+  height: 1px;
+  background: var(--border);
+  margin: 4px 2px;
+}
+
+.switcher-empty {
+  padding: 6px 8px;
+  color: var(--muted);
+  font-size: 13px;
 }
 
 .side-user {
   margin-top: auto;
   display: flex;
-  justify-content: space-between;
   align-items: center;
-  gap: 8px;
-  padding: 10px 8px 0;
+  gap: 10px;
+  padding: 12px 6px 0;
   border-top: 1px solid var(--border);
   font-size: 14px;
 }
 
+.side-user-text {
+  display: grid;
+  flex: 1;
+  min-width: 0;
+}
+
+.side-user-text strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .side-user form {
   margin: 0;
+}
+
+.avatar {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 30px;
+  height: 30px;
+  border-radius: 999px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  font-weight: 700;
+  font-size: 13px;
 }
 
 @media (max-width: 860px) {

@@ -25,7 +25,7 @@ export default async function ProjectsPage({
     <>
       <PageHeader
         title="Projects"
-        subtitle="A project tracks one application's database schema: its versions, the migrations between them, and the databases it runs on."
+        subtitle="A project tracks one application's database schema: the agreed versions on main, the branches that change it, and the databases it runs on."
       />
       <Flash searchParams={searchParams} />
       {projects.length === 0 ? (
@@ -52,15 +52,19 @@ export default async function ProjectsPage({
               </p>
               <p className="small muted">
                 {plural(project._count.versions, "version")} ·{" "}
-                {plural(project._count.migrations, "migration")} ·{" "}
-                {plural(project._count.environments, "database")}
+                {plural(
+                  project._count.branches,
+                  "open branch",
+                  "open branches",
+                )}{" "}
+                · {plural(project._count.environments, "database")}
               </p>
             </Link>
           ))}
         </div>
       )}
       {canCreate && (
-        <div className="card" style={{ maxWidth: 640 }}>
+        <div className="card" id="new-project" style={{ maxWidth: 640 }}>
           <h3>New project</h3>
           <form action={createProjectAction} className="stack">
             <label>
