@@ -989,6 +989,13 @@ a.project-card h3 {
   white-space: nowrap;
 }
 
+.side-empty {
+  margin: 0;
+  padding: 2px 10px 6px;
+  font-size: 13px;
+  color: var(--muted);
+}
+
 .side-count {
   min-width: 20px;
   padding: 0 6px;

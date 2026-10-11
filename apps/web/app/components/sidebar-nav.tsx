@@ -1,14 +1,16 @@
 "use client";
 
 // The sidebar's links. A client component only to know the current path: it shows which
-// project you are in, highlights where you are, and closes the project switcher after you
-// pick something. All data comes from the server layout, and every page still checks
+// project you are in, highlights where you are, remembers the last project you opened (so
+// pages outside a project still show its sections), and closes the project switcher after
+// you pick something. All data comes from the server layout, and every page still checks
 // permissions itself.
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useRef } from "react";
 import { signOutAction } from "../sign-out-action.ts";
 import { Icon, type IconName } from "./icons.tsx";
+import { LAST_PROJECT_COOKIE } from "./last-project.ts";
 
 export interface SidebarProject {
   slug: string;
@@ -89,7 +91,7 @@ function ProjectSwitcher({
         <span className="switcher-text">
           <span className="switcher-caption">Project</span>
           <span className="switcher-name">
-            {current?.name ?? "Choose a project"}
+            {current?.name ?? "No projects yet"}
           </span>
         </span>
         <Icon name="chevron" />
@@ -120,7 +122,7 @@ function ProjectSwitcher({
         <div className="switcher-divider" />
         <Link href="/projects" role="menuitem">
           <Icon name="projects" />
-          All projects
+          View all projects
         </Link>
         {canManageProjects && (
           <Link href="/projects#new-project" role="menuitem">
@@ -135,12 +137,15 @@ function ProjectSwitcher({
 
 export function SidebarNav({
   projects,
+  lastProject,
   user,
   canManageProjects,
   canManageMembers,
   canViewAudit,
 }: {
   projects: SidebarProject[];
+  /** The last project opened, from the cookie; checked by the layout. */
+  lastProject: string | undefined;
   user: { name: string; role: string };
   canManageProjects: boolean;
   canManageMembers: boolean;
@@ -150,7 +155,17 @@ export function SidebarNav({
   const within = (href: string) =>
     pathname === href || pathname.startsWith(`${href}/`);
   const slug = /^\/projects\/([^/]+)/.exec(pathname)?.[1];
-  const current = projects.find((project) => project.slug === slug);
+  const opened = projects.find((project) => project.slug === slug);
+  // Outside a project (all projects, members, audit log) the sidebar keeps showing the
+  // last project, or the first one, so its sections never disappear.
+  const current =
+    opened ??
+    projects.find((project) => project.slug === lastProject) ??
+    projects[0];
+  useEffect(() => {
+    if (opened === undefined) return;
+    document.cookie = `${LAST_PROJECT_COOKIE}=${encodeURIComponent(opened.slug)}; path=/; max-age=31536000; samesite=lax`;
+  }, [opened]);
   const base = current === undefined ? "" : `/projects/${current.slug}`;
   const sections: {
     href: string;
@@ -228,31 +243,44 @@ export function SidebarNav({
           ))}
         </div>
       )}
-      <div className="side-group">
-        <div className="side-heading">Workspace</div>
-        <Item
-          href="/projects"
-          label="All projects"
-          icon="projects"
-          active={pathname === "/projects"}
-        />
-        {canManageMembers && (
-          <Item
-            href="/settings/members"
-            label="Members"
-            icon="members"
-            active={within("/settings/members")}
-          />
-        )}
-        {canViewAudit && (
-          <Item
-            href="/settings/audit"
-            label="Audit log"
-            icon="audit"
-            active={within("/settings/audit")}
-          />
-        )}
-      </div>
+      {current === undefined && (
+        <div className="side-group">
+          <p className="side-empty">
+            {canManageProjects
+              ? "Create your first project to get started."
+              : "Ask an admin to create a project."}
+          </p>
+          {canManageProjects && (
+            <Item
+              href="/projects#new-project"
+              label="New project"
+              icon="plus"
+              active={false}
+            />
+          )}
+        </div>
+      )}
+      {(canManageMembers || canViewAudit) && (
+        <div className="side-group">
+          <div className="side-heading">Workspace</div>
+          {canManageMembers && (
+            <Item
+              href="/settings/members"
+              label="Members"
+              icon="members"
+              active={within("/settings/members")}
+            />
+          )}
+          {canViewAudit && (
+            <Item
+              href="/settings/audit"
+              label="Audit log"
+              icon="audit"
+              active={within("/settings/audit")}
+            />
+          )}
+        </div>
+      )}
       <div className="side-user">
         <span className="avatar" aria-hidden>
           {user.name.charAt(0).toUpperCase()}

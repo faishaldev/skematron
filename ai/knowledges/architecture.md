@@ -77,7 +77,7 @@ Status as of 2026-10-10: pre-alpha.
   - Each run creates a `skematron_shadow_<random>` database and always drops it. The role must not be a superuser.
   - Verification recreates the `from` version (plus the extensions it reports), runs the plan statement by statement, and requires the result to match `to`.
 - **Pages:**
-  - Every signed-in page has the sidebar (`app/(app)/layout.tsx`): a project switcher, the current project's sections, the workspace (all projects, members, audit log), and the account.
+  - Every signed-in page has the sidebar (`app/(app)/layout.tsx`): a project switcher (with the list of all projects), the current project's sections (the last project opened when the page is outside a project), the workspace (members, audit log), and the account.
   - `/projects`, `/projects/[project]` (overview: next step, counts, open branches, diagram of main)
   - `/projects/[project]/{branches,versions,diagram,environments,settings}`: the project's sections. `diagram` takes `?version=` or `?branch=`.
   - `/projects/[project]/environments/{new,[environment]}`

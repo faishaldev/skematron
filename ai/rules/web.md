@@ -69,9 +69,12 @@ Read before changing anything in `apps/web/`. These rules add to AGENTS.md and n
 ## Pages and wording
 
 - **Navigation lives in the sidebar** (`app/(app)/layout.tsx`, `components/sidebar-nav.tsx`):
-  - At the top is a project switcher: a native `<details>` menu with the projects, All projects and New project.
+  - At the top is a project switcher: a native `<details>` menu with the projects, "View all projects" and "New project". That is the only way to the list of projects.
   - Below it are the current project's sections, with icons from `components/icons.tsx`: Overview, Branches (with the number of open branches), Main versions, Diagram, Databases and Settings.
-  - Then the Workspace group (All projects, Members, Audit log), then the account.
+  - **The sections are always there.** Outside a project (the projects list, members, audit log), the sidebar shows the last project you opened, or else the first one.
+    - The client sidebar remembers the last project in the `skematron_last_project` cookie, which holds only a slug.
+    - The layout uses it only if it is one of the member's projects.
+  - Then the Workspace group (Members, Audit log, for admins), then the account.
   - Give a new project-level area its own page under `projects/[project]/` and a sidebar entry, rather than another section on the overview.
   - Pages load the project with `resolveProject` (`lib/project-pages.ts`).
 - **Show the schema as a diagram first** (`components/diagram.tsx`, `SchemaDiagram`):

@@ -89,7 +89,7 @@ All notable changes to Skematron are recorded here. The format follows [Keep a C
 ### Changed
 
 - **A sidebar and schema diagrams make the dashboard easier to find your way around.**
-  - **The sidebar** starts with a project switcher (the current project, with every project, All projects and New project in its menu). Below it are the current project's sections, with icons and the number of open branches:
+  - **The sidebar** starts with a project switcher (the current project, with every project, "View all projects" and "New project" in its menu). Below it are the current project's sections, with icons and the number of open branches. They stay visible on every page: outside a project, the sidebar shows the last project you opened:
     - Overview: the next step, counts, open branches, and a diagram of main
     - Branches, Main versions, Diagram, Databases, and Settings (for admins)
 
