@@ -173,22 +173,22 @@ Trial duration, quota, grace period, and entitlements must be configuration/poli
 Pre-alpha. What exists:
 
 - `packages/core` (`@skematron/core`): snapshot format v1, canonical JSON with SHA-256 checksums, schema editing functions (`addTable`, `addColumn`, …), and `planMigration` (ordered operations with risk levels, warnings and unsupported changes, plus questions about possible renames and backfills that answers resolve).
-- `packages/adapters` (`@skematron/adapters`): read-only PostgreSQL 14+ introspection (`introspectPostgres`), SQL rendering (`renderPostgresMigration`), and the Prisma Schema adapter (`preparePrismaSchema`).
+- `packages/adapters` (`@skematron/adapters`): read-only PostgreSQL 14+ introspection (`introspectPostgres`), SQL rendering (`renderPostgresMigration`), SQL script reading (`preparePostgresScript`), the Prisma Schema adapter (`preparePrismaSchema`), and the list of migration tools' history tables (`withoutMigrationHistory`).
 - `packages/storage` (`@skematron/storage`): content-addressed, checksum-verified artifact files.
 - `apps/web` (`@skematron/web`): the **dashboard**, in single-organization mode. It runs on Next.js 16, Better Auth and Prisma 7, with a metadata database in `prisma/`.
   - First-run setup and invitation-only sign-up.
   - Roles: viewer, member, admin, owner.
   - Projects, and environments whose connection URLs are encrypted.
-  - Versions are immutable and checksummed, imported read-only from an environment or from a `schema.prisma` (through the Prisma CLI and a shadow database).
+  - Versions are immutable and checksummed, imported read-only from an environment, from SQL produced by any ORM or migration tool, or from a `schema.prisma` (both through a shadow database). Migration tools' history tables are left out and listed as not tracked.
   - Compare versions, check drift, export SQL or JSON.
   - Main and branches:
     - Main is the line of immutable versions. After the baseline (v1), it changes only by merging a branch.
-    - A branch is a shared, proposed change. Its content comes from the schema editor ("dashboard" projects) or from `schema.prisma` uploads ("code" projects).
+    - A branch is a shared, proposed change. Its content comes from the schema editor ("dashboard" projects) or from uploads ("code" projects): SQL of the whole schema, SQL migrations applied to the branch's base, or a `schema.prisma`.
     - Each branch is planned with guided questions instead of SQL and test-run in a shadow database (`SKEMATRON_SHADOW_DATABASE_URL`).
     - It is reviewed four-eyes: an admin or owner who did not work on it approves. Then it is merged, or closed without a trace on main.
   - An audit log.
 
-Not built yet: applying migrations to environments (Phase 1b) and production protection, hosted multi-tenant SaaS mode (SSRF guard, quotas, billing), the CLI and API tokens, SQL DDL import, multi-file Prisma schemas and Prisma migration history import, email delivery, and Docker Compose. The CLI command names above are still plans. See `ai/knowledges/architecture.md` and `docs/self-hosting.md`.
+Not built yet: applying migrations to environments (Phase 1b) and production protection, hosted multi-tenant SaaS mode (SSRF guard, quotas, billing), the CLI and API tokens, multi-file Prisma schemas and migration history import, email delivery, and Docker Compose. The CLI command names above are still plans. See `ai/knowledges/architecture.md` and `docs/self-hosting.md`.
 
 ## Development
 
@@ -212,7 +212,8 @@ Not built yet: applying migrations to environments (Phase 1b) and production pro
 - PostgreSQL integration tests run only when `SKEMATRON_TEST_DATABASE_URL` is set (`.env`, git-ignored); the migration tests also need `SKEMATRON_SHADOW_DATABASE_URL`. Never point either at a shared or production server.
 - Try it by hand:
   - `pnpm web` starts the dashboard at <http://127.0.0.1:3100>. The first visit goes to `/setup`.
-  - `packages/adapters/src/prisma/fixtures/v1.prisma` and `v2.prisma` are sample Prisma schemas: import both, then create a migration between them.
+  - `packages/adapters/src/prisma/fixtures/v1.prisma` and `v2.prisma` are sample Prisma schemas: import v1, then upload v2 to a branch.
+  - `packages/adapters/src/postgres/fixtures/scripts/` holds real SQL from pg_dump, Drizzle, Knex, Django, Alembic and Prisma. For example, import `django-0001.sql` as the whole schema, then upload `django-0002.sql` to a branch as migrations.
   - `pnpm db:seed [v1|v2]` loads a sample `demo` schema into `skematron_test`. It writes to the local cluster only. Add it as an environment with that URL and schema `demo`; loading `v2` later gives Compare something to show.
   - `pnpm example:export [schema…]` runs `packages/adapters/examples/export-schema.ts`. It is read-only, and uses `DATABASE_URL` or else the test database.
 - Configuration for self-hosting: `docs/self-hosting.md`.

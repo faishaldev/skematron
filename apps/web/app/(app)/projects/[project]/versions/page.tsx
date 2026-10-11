@@ -72,14 +72,14 @@ export default async function VersionsPage({
           actions={
             code && can(actor.role, "author-migrations") ? (
               <Link href={`${base}/versions/new`} className="button primary">
-                Import schema.prisma
+                Import a schema file
               </Link>
             ) : undefined
           }
         >
           <p>
             {code
-              ? "Import a schema.prisma, or import a connected database, to make v1."
+              ? "Import a schema file (SQL or a schema.prisma), or import a connected database, to make v1."
               : "Start a branch, design the schema, and merge it to make v1."}
           </p>
         </Empty>

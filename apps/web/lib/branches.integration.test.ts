@@ -16,6 +16,7 @@ import {
   createTestMetadataDatabase,
   createUser,
   repositoryRoot,
+  siblingDatabaseUrl,
 } from "./test-support.ts";
 
 const testUrl = process.env.SKEMATRON_TEST_DATABASE_URL;
@@ -102,27 +103,75 @@ describe(
     }
 
     it("always drops the shadow database, also after a failure", async () => {
-      const before = await shadowDatabases();
-      let name = "";
-      await lib.shadow.withShadowDatabase(async (client) => {
-        const { rows } = await client.query<{
-          name: string;
-          superuser: string;
-        }>(
+      // Other test files use shadow databases at the same time, so check these two by name.
+      const used: string[] = [];
+      const current = async (client: {
+        query: (text: string) => Promise<{ rows: unknown[] }>;
+      }) => {
+        const { rows } = await client.query(
           "SELECT current_database() AS name, current_setting('is_superuser') AS superuser",
         );
-        name = rows[0]!.name;
-        assert.equal(rows[0]!.superuser, "off");
-      });
-      assert.match(name, /^skematron_shadow_[0-9a-f]{16}$/);
+        const row = rows[0] as { name: string; superuser: string };
+        assert.equal(row.superuser, "off");
+        used.push(row.name);
+      };
+      await lib.shadow.withShadowDatabase(current);
       await assert.rejects(
-        lib.shadow.withShadowDatabase(async () => {
+        lib.shadow.withShadowDatabase(async (client) => {
+          await current(client);
           throw new Error("boom");
         }),
         /boom/,
       );
-      assert.deepEqual(await shadowDatabases(), before);
+      assert.equal(used.length, 2);
+      for (const name of used) {
+        assert.match(name, /^skematron_shadow_[0-9a-f]{16}$/);
+      }
+      const left = await shadowDatabases();
+      assert.deepEqual(
+        used.filter((name) => left.includes(name)),
+        [],
+      );
     });
+
+    const sameServer = (() => {
+      if (!testUrl || !shadowUrl) return false;
+      // A socket directory (?host=) wins over the host name; the port may be a parameter.
+      const where = (url: string) => {
+        const parsed = new URL(url);
+        const host =
+          parsed.searchParams.get("host") || parsed.hostname || "localhost";
+        const port = parsed.port || parsed.searchParams.get("port") || "5432";
+        return `${host}:${port}`;
+      };
+      return where(testUrl) === where(shadowUrl);
+    })();
+
+    it(
+      "drops the shadow database once another role's session in it has ended",
+      {
+        skip: sameServer
+          ? false
+          : "needs the test and shadow databases on one server",
+      },
+      async () => {
+        // Like an autovacuum worker: a session the shadow role may not terminate.
+        let name = "";
+        let other: InstanceType<typeof import("pg").default.Client> | undefined;
+        await lib.shadow.withShadowDatabase(async (client) => {
+          const { rows } = await client.query<{ name: string }>(
+            "SELECT current_database() AS name",
+          );
+          name = rows[0]!.name;
+          other = new (await import("pg")).default.Client({
+            connectionString: siblingDatabaseUrl(testUrl!, name),
+          });
+          await other.connect();
+          setTimeout(() => void other!.end(), 600);
+        });
+        assert.ok(!(await shadowDatabases()).includes(name));
+      },
+    );
 
     it("reports a missing shadow database instead of failing", async () => {
       const saved = process.env.SKEMATRON_SHADOW_DATABASE_URL;
@@ -201,7 +250,6 @@ describe(
         /Start a branch/,
         "after the baseline, changes go through branches",
       );
-      assert.deepEqual(await shadowDatabases(), []);
     });
 
     it("takes a branch through questions, a test run, four-eyes review and merge", async () => {
@@ -356,7 +404,6 @@ describe(
         "migration.submit",
         "migration.approve",
       ]);
-      assert.deepEqual(await shadowDatabases(), []);
     });
 
     it("keeps people who changed a branch from reviewing it", async () => {
@@ -554,7 +601,6 @@ describe(
         ),
         /test run has not passed/,
       );
-      assert.deepEqual(await shadowDatabases(), []);
     });
 
     it("imports a database as the baseline, then turns differences into branches", async () => {

@@ -30,7 +30,11 @@
 
 **Database adapter.** Connects to a database engine through a session, reads schema metadata and renders SQL for that engine. Example: PostgreSQL.
 
-**Schema-tool adapter.** Imports or exports a schema format. Today: Prisma Schema (`preparePrismaSchema`, which prepares a `schema.prisma` for Prisma's own CLI). SQL DDL is planned.
+**Schema-tool adapter.** Imports or exports a schema format. Today: Prisma Schema (`preparePrismaSchema`, which prepares a `schema.prisma` for Prisma's own CLI). SQL from any other tool goes through the PostgreSQL adapter's script reader (`preparePostgresScript`) instead.
+
+**SQL script.** PostgreSQL SQL uploaded to the dashboard. It is either the whole schema (from an empty database: `pg_dump --schema-only`, `drizzle-kit export`, `alembic upgrade head --sql`) or changes only (migrations, run on top of the version they start from). Only its checksum is kept, never the script.
+
+**Migration history table.** The table a migration tool keeps to remember which migrations ran, such as `_prisma_migrations` or `alembic_version`. Skematron leaves these out of schemas it reads from outside and lists them as not tracked.
 
 **Intended vs. observed state.** The intended state is the snapshot a team wants a database to have. The observed state is what introspection reads from that database now. Skematron keeps the two separate (AGENTS.md).
 
@@ -42,7 +46,7 @@
 
 **Environment.** A database a project reads, such as `production` or `staging`. It stores an encrypted connection URL, a redacted `connectionHint`, and the schemas (namespaces) to track. Skematron only introspects it, read-only.
 
-**Schema version.** An immutable, numbered snapshot of a project's schema (v1, v2, …), imported from an environment or from a `schema.prisma`. It records provenance (environment and server version, or Prisma version and schema file checksum) and the objects not captured.
+**Schema version.** An immutable, numbered snapshot of a project's schema (v1, v2, …), imported from an environment, a SQL script or a `schema.prisma`, or merged from a branch. It records provenance (environment and server version, the SQL script's checksum, or Prisma version and schema file checksum) and the objects not captured.
 
 **Artifact.** A file in the artifact store (`@skematron/storage`), named by the SHA-256 of its bytes. A schema version's checksum is its artifact key.
 
@@ -58,9 +62,9 @@
 
 **Main.** A project's line of immutable, numbered schema versions (v1, v2, …): the agreed schema. After the baseline, it grows only by merging branches.
 
-**Baseline.** The first version on main, imported from a `schema.prisma` or a database. It is the only version that does not come from a branch.
+**Baseline.** The first version on main, imported from a SQL script, a `schema.prisma` or a database. It is the only version that does not come from a branch.
 
-**Branch.** A proposed change to the schema, shared with the team. It starts from the latest version on main (its base) with a copy of its schema (its head), which people change with the schema editor or by uploading a `schema.prisma`. It is open until it is merged or closed.
+**Branch.** A proposed change to the schema, shared with the team. It starts from the latest version on main (its base) with a copy of its schema (its head), which people change with the schema editor or by uploading SQL (the whole schema or migrations) or a `schema.prisma`. It is open until it is merged or closed.
 
 **Merge.** Recording an approved branch's head as the next version on main. It is refused if main moved on, or if the branch changed after its approval.
 
@@ -72,7 +76,7 @@
 
 **Revision.** One immutable test run of a branch: its answers, the plan, the SQL script and the head it planned towards (artifacts), the risk summary and the shadow verification result.
 
-**Shadow database.** A temporary `skematron_shadow_*` database on a dedicated server (`SKEMATRON_SHADOW_DATABASE_URL`), where Skematron runs Prisma's DDL and checks migration plans. It is dropped after each run and never holds user data.
+**Shadow database.** A temporary `skematron_shadow_*` database on a dedicated server (`SKEMATRON_SHADOW_DATABASE_URL`), where Skematron runs uploaded SQL scripts and Prisma's DDL, and checks migration plans. It is dropped after each run and never holds user data.
 
 **Verification.** Recreating the `from` version in a shadow database, running a plan there statement by statement, and checking that the result matches the `to` version. Result: passed, failed or unavailable. The dashboard calls it the "test run".
 

@@ -15,7 +15,7 @@ Read before changing anything in `apps/web/`. These rules add to AGENTS.md and n
 - **Not multi-tenant yet.** Hosted SaaS mode needs these first:
   - an SSRF guard for user-supplied database hosts (AGENTS.md "Security")
   - quotas and entitlements
-  - stronger shadow-database isolation: members can run SQL there through Prisma's `dbgenerated(...)` (decision D17)
+  - stronger shadow-database isolation: members can run their own SQL there, through SQL uploads and Prisma's `dbgenerated(...)` (decisions D17 and D24)
 
 ## Authentication and authorization
 
@@ -40,9 +40,11 @@ Read before changing anything in `apps/web/`. These rules add to AGENTS.md and n
 - They are stored only encrypted (`lib/secrets.ts`, AES-256-GCM, `SKEMATRON_SECRET_KEY`).
 - **Never send a URL, password or decrypted secret** to the browser, the HTML, logs, audit details or error messages. Show `connectionHint` only.
 - **Only `lib/targets.ts` decrypts environment URLs and connects to user databases.** It only introspects, read-only. Nothing in the app writes to a user database. Apply needs its own design and authorization flow.
-- **SQL derived from user input runs only in the shadow database** (`lib/shadow.ts`): Prisma's DDL and migration plans.
+- **SQL from user input runs only in the shadow database** (`lib/shadow.ts`): uploaded SQL scripts, Prisma's DDL and migration plans.
   - It uses a fresh `skematron_shadow_*` database per run, drops it afterwards, and refuses a superuser role.
   - Never run such SQL anywhere else, and never point the shadow URL at a server with real data.
+  - Run scripts only through `preparePostgresScript` and `snapshotFromScript`: split, with skipped and refused statements set aside, one statement at a time.
+  - Never store an uploaded SQL script. Keep its checksum only: it may contain rows.
 - **The Prisma CLI** runs only through `lib/prisma-import.ts`: in a temporary directory, with a timeout, and with an environment that contains none of Skematron's secrets. Connection URLs are removed from a schema before it is run or stored.
 - Edit forms never pre-fill a stored URL. An empty field means "keep the current one".
 
@@ -51,10 +53,12 @@ Read before changing anything in `apps/web/`. These rules add to AGENTS.md and n
 - **Schema versions are immutable.**
   - `lib/versions.ts` stores the snapshot in `@skematron/storage` first. Then, under a per-project advisory lock, it records the next number, or reports "unchanged".
   - Never update or delete a version.
-- **Main changes only by merging a branch** (`lib/branches.ts`). The only exception is the baseline: the first `schema.prisma` import or environment import. Never add another path that records versions directly.
+- **Main changes only by merging a branch** (`lib/branches.ts`). The only exception is the baseline: the first SQL, `schema.prisma` or environment import. Never add another path that records versions directly.
 - **Branches:**
   - Change a head only through `updateHead`, which checks `updatedAt` (no lost updates), records the contributor, and sends the review back to draft.
-  - The editor works only for "dashboard" projects and uploads only for "code" projects (`requireSchemaSource`), so a project never has two sources of truth.
+  - The editor works only for "dashboard" projects and uploads (SQL or `schema.prisma`) only for "code" projects (`requireSchemaSource`), so a project never has two sources of truth.
+  - A SQL upload with changes only applies to the branch's base version, never to its current head, so uploading a fixed migration again replaces it.
+- **Schemas read from outside** (environments, SQL, Prisma) go through `untrackMigrationHistory` (`lib/migration-history.ts`), so migration tools' history tables are listed as not tracked. Never filter the editor's schemas.
   - Every editor edit goes through core's edit functions, then `normalizeSnapshot` in the shadow database. Never store a typed fragment without that round trip. Check typed names, types and defaults with `lib/schema-input.ts` first.
   - Merge only through `mergeBranch`. It requires an approval of the current test run for exactly the current head, and records the version with `basedOn` and `onCreated` in one transaction.
   - A closed or merged branch never changes again.
@@ -85,6 +89,7 @@ Read before changing anything in `apps/web/`. These rules add to AGENTS.md and n
 - **Every page starts the same way:** `Breadcrumbs`, then `PageHeader` (title, optional badge and subtitle, main actions on the right), then `Flash`. These and `Callout`, `Steps`, `Empty` and `Stat` are in `app/components/ui.tsx`.
 - **Tell people what to do next.** Pages with a workflow (project, branch) show one `Callout` with the next step and its button. Empty lists use `Empty` and say how to fill them.
 - **Plain language first, SQL second.** Plans are shown with `PlanView`: one sentence per change (`describeOperation`), its risk and warnings, and the SQL behind a `<details>`. Technical steps (sequences, temporary defaults) are folded away. Checksums, history and downloads go into `<details>` too.
+- **Stay ORM-agnostic in wording.** Describe the "code" schema source for any ORM or migration tool. Name Prisma or `schema.prisma` only on the pages and buttons that take that file.
 - **Words people use:** "test run", not "shadow check"; "database", not "environment", in headings; "Deletes data", not "destructive", in badges. Keep stored values and audit actions unchanged.
 - Style with the classes in `app/globals.css` (`button`/`.button`, `.primary`, `.card`, `.card.flush`, `.callout`, `label.option`, `.accordion`, `.narrow-page` for a page that is a single form). Both light and dark mode must work.
 

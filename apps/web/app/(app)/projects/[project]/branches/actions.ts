@@ -1,6 +1,11 @@
 "use server";
 
-import { field, runAction, withFlash } from "../../../../../lib/actions.ts";
+import {
+  field,
+  runAction,
+  uploadedText,
+  withFlash,
+} from "../../../../../lib/actions.ts";
 import {
   closeBranch,
   createBranch,
@@ -12,11 +17,16 @@ import {
   submitBranch,
   testBranch,
   uploadPrismaToBranch,
+  uploadSqlToBranch,
 } from "../../../../../lib/branches.ts";
 import { UserFacingError } from "../../../../../lib/errors.ts";
 import { answersFromForm } from "../../../../../lib/migrations.ts";
 import { MAX_PRISMA_SCHEMA_BYTES } from "../../../../../lib/prisma-import.ts";
 import { getProject, schemaSourceOf } from "../../../../../lib/projects.ts";
+import {
+  describeSkipped,
+  MAX_SQL_SCRIPT_BYTES,
+} from "../../../../../lib/sql-import.ts";
 import type { SchemaEdit, TableRef } from "../../../../../lib/schema-edits.ts";
 import {
   columnNames,
@@ -138,7 +148,7 @@ export async function createBranchAction(formData: FormData): Promise<void> {
       : withFlash(
           `${branchPath(slug, branch.name)}/upload`,
           "notice",
-          `Branch ${branch.name} created. Upload the changed schema.prisma.`,
+          `Branch ${branch.name} created. Upload your changes.`,
         );
   });
 }
@@ -161,7 +171,8 @@ export async function editBranchAction(formData: FormData): Promise<void> {
   });
 }
 
-export async function uploadPrismaAction(formData: FormData): Promise<void> {
+/** Replaces the branch's schema with an upload: SQL (whole schema or changes) or Prisma. */
+export async function uploadSchemaAction(formData: FormData): Promise<void> {
   const slug = field(formData, "project");
   const name = field(formData, "branch");
   await runAction(`${branchPath(slug, name)}/upload`, async () => {
@@ -169,26 +180,31 @@ export async function uploadPrismaAction(formData: FormData): Promise<void> {
       formData,
       "author-migrations",
     );
-    const file = formData.get("schemaFile");
-    let text = field(formData, "schemaText");
-    if (file instanceof File && file.size > 0) {
-      if (file.size > MAX_PRISMA_SCHEMA_BYTES) {
-        throw new UserFacingError(
-          `The file is larger than ${MAX_PRISMA_SCHEMA_BYTES / 1024} KB.`,
-        );
-      }
-      text = await file.text();
+    const format = field(formData, "format");
+    let note: string;
+    if (format === "sql-schema" || format === "sql-changes") {
+      const { skipped } = await uploadSqlToBranch(
+        actor,
+        project,
+        branch,
+        await uploadedText(formData, MAX_SQL_SCRIPT_BYTES),
+        format === "sql-schema" ? "schema" : "changes",
+      );
+      note = describeSkipped(skipped);
+    } else if (format === "prisma") {
+      const { removed } = await uploadPrismaToBranch(
+        actor,
+        project,
+        branch,
+        await uploadedText(formData, MAX_PRISMA_SCHEMA_BYTES),
+      );
+      note =
+        removed.length === 0
+          ? ""
+          : ` Removed from the stored file: ${removed.join(", ")}.`;
+    } else {
+      throw new UserFacingError("Choose what you are uploading.");
     }
-    const { removed } = await uploadPrismaToBranch(
-      actor,
-      project,
-      branch,
-      text,
-    );
-    const note =
-      removed.length === 0
-        ? ""
-        : ` Removed from the stored file: ${removed.join(", ")}.`;
     return withFlash(
       branchPath(slug, name),
       "notice",

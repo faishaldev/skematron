@@ -7,11 +7,15 @@ import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { promisify } from "node:util";
-import { preparePrismaSchema } from "@skematron/adapters";
+import {
+  preparePostgresScript,
+  preparePrismaSchema,
+  SqlScriptError,
+} from "@skematron/adapters";
 import type { Actor } from "./actor.ts";
 import { UserFacingError } from "./errors.ts";
 import { assertCan, requireSchemaSource, type Project } from "./projects.ts";
-import { snapshotFromDdl } from "./shadow.ts";
+import { snapshotFromScript } from "./shadow.ts";
 import {
   artifacts,
   listVersions,
@@ -138,7 +142,16 @@ export async function prismaSnapshot(text: string) {
   }
   const prepared = preparePrismaSchema(text);
   const { ddl, prismaVersion } = await prismaDdl(prepared.schema);
-  const { snapshot, unsupported } = await snapshotFromDdl(ddl);
+  let script;
+  try {
+    script = preparePostgresScript(ddl);
+  } catch (error) {
+    if (!(error instanceof SqlScriptError)) throw error;
+    throw new UserFacingError(
+      `Prisma's SQL could not be read. ${error.message}`,
+    );
+  }
+  const { snapshot, unsupported } = await snapshotFromScript({ script });
   const schemaFile = await artifacts().put(
     new TextEncoder().encode(prepared.schema),
   );

@@ -1,6 +1,6 @@
 // Branches: proposed changes to a project's schema. A branch starts from the latest version
 // on main (its base) with a copy of that schema (its head). People change the head (the
-// schema editor for "dashboard" projects, schema.prisma uploads for "code" projects), test
+// schema editor for "dashboard" projects, SQL or schema.prisma uploads for "code" projects), test
 // it and get it reviewed through its migration, then merge it (the head becomes the next
 // version on main) or close it (nothing is recorded). Apart from the first version (the
 // baseline), main only grows through merged branches.
@@ -14,7 +14,7 @@ import {
   type MigrationPlan,
   type SchemaSnapshot,
 } from "@skematron/core";
-import type { UnsupportedObject } from "@skematron/adapters";
+import type { SkippedStatement, UnsupportedObject } from "@skematron/adapters";
 import type { Actor } from "./actor.ts";
 import { recordAudit } from "./audit.ts";
 import { db } from "./db.ts";
@@ -38,6 +38,7 @@ import {
 } from "./projects.ts";
 import { applyEdit, type SchemaEdit } from "./schema-edits.ts";
 import { normalizeSnapshot } from "./shadow.ts";
+import { sqlSnapshot, type SqlScriptKind } from "./sql-import.ts";
 import { readLive } from "./targets.ts";
 import {
   listVersions,
@@ -314,6 +315,28 @@ export async function uploadPrismaToBranch(
   const imported = await prismaSnapshot(text);
   await updateHead(actor, project, branch, imported);
   return { removed: imported.removed };
+}
+
+/**
+ * Replaces the head with the schema an uploaded SQL script builds ("code" projects): the
+ * whole schema, or changes applied on top of the branch's base version.
+ */
+export async function uploadSqlToBranch(
+  actor: Actor,
+  project: Project,
+  branch: Branch,
+  text: string,
+  kind: SqlScriptKind,
+): Promise<{ skipped: SkippedStatement[] }> {
+  assertCan(actor, "author-migrations");
+  requireOpen(branch);
+  requireSchemaSource(project, "code");
+  const imported = await sqlSnapshot(text, kind, {
+    number: branch.baseVersion?.number ?? null,
+    ...(await baseOf(branch)),
+  });
+  await updateHead(actor, project, branch, imported);
+  return { skipped: imported.skipped };
 }
 
 export type EnvironmentImport =

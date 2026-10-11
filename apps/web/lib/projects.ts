@@ -52,8 +52,8 @@ export async function getProject(actor: Actor, slug: string) {
 export type Project = Awaited<ReturnType<typeof getProject>>;
 
 /**
- * Where a project's schema is written. "code": a schema.prisma, migrations in the
- * application's repository, or the database itself; versions are imported. "dashboard":
+ * Where a project's schema is written. "code": the application's repository, with any ORM
+ * or migration tool; changes come in from a database or an uploaded schema file. "dashboard":
  * the schema editor; versions are saved from it.
  */
 export type SchemaSource = "code" | "dashboard";
@@ -80,7 +80,7 @@ export function requireSchemaSource(
   throw new UserFacingError(
     source === "code"
       ? "This project's schema is written in Skematron's editor, so change it there. An admin can switch the project to code in its settings."
-      : "This project's schema is written in code: upload the changed schema.prisma instead. An admin can switch the project to the schema editor in its settings.",
+      : "This project's schema is written in code: upload your changes to the branch instead. An admin can switch the project to the schema editor in its settings.",
   );
 }
 

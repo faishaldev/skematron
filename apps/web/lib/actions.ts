@@ -3,7 +3,7 @@
 // /sign-in) are rethrown, never swallowed.
 import "server-only";
 import { redirect, unstable_rethrow } from "next/navigation";
-import { messageFor } from "./errors.ts";
+import { messageFor, UserFacingError } from "./errors.ts";
 
 export function withFlash(
   path: string,
@@ -33,3 +33,22 @@ export const field = (formData: FormData, name: string): string => {
   const value = formData.get(name);
   return typeof value === "string" ? value : "";
 };
+
+/** The chosen file (`schemaFile`) if there is one, else the pasted text (`schemaText`). */
+export async function uploadedText(
+  formData: FormData,
+  maxBytes: number,
+): Promise<string> {
+  const file = formData.get("schemaFile");
+  if (!(file instanceof File) || file.size === 0) {
+    return field(formData, "schemaText");
+  }
+  if (file.size > maxBytes) {
+    const limit =
+      maxBytes >= 1024 * 1024
+        ? `${maxBytes / 1024 / 1024} MB`
+        : `${maxBytes / 1024} KB`;
+    throw new UserFacingError(`The file is larger than ${limit}.`);
+  }
+  return file.text();
+}

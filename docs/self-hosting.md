@@ -45,7 +45,7 @@ pnpm --filter @skematron/web start
 
 ## The shadow database server
 
-Skematron runs SQL that comes from users (Prisma's DDL, schema editor drafts, migration plans) to check what it really does. It does this only in temporary databases on a server you dedicate to it, never on the databases you manage and never on the metadata database.
+Skematron runs SQL that comes from users (uploaded SQL scripts, Prisma's DDL, schema editor drafts, migration plans) to check what it really does. It does this only in temporary databases on a server you dedicate to it, never on the databases you manage and never on the metadata database.
 
 - **Use a separate PostgreSQL 14+ server or container that holds nothing else.** It needs no backups or persistent volume.
 - **Create a role that can create databases and is not a superuser.** Skematron refuses a superuser role.
@@ -55,8 +55,10 @@ Skematron runs SQL that comes from users (Prisma's DDL, schema editor drafts, mi
   ```
 
 - **Point `SKEMATRON_SHADOW_DATABASE_URL` at that server's `postgres` database** with this role.
-- **What happens in it:** each Prisma import and each migration revision creates a `skematron_shadow_<random>` database, works in it with statement timeouts, and drops it again. If the app is killed mid-run, a leftover `skematron_shadow_*` database can be dropped by hand.
+- **Members can run their own SQL there,** by uploading a schema or a migration. Skematron refuses statements about databases, roles, tablespaces and server settings, and `COPY`, but that is not a sandbox: the dedicated server and the non-superuser role are what keep it contained.
+- **What happens in it:** each upload, each Prisma import and each migration revision creates a `skematron_shadow_<random>` database, works in it with statement timeouts, and drops it again. If an autovacuum worker is visiting the database at the end, the drop is retried for a few seconds, because a non-superuser role cannot end that worker. If the app is killed mid-run, a leftover `skematron_shadow_*` database can be dropped by hand.
 - **Extensions:** a check recreates the extensions the starting version reports, such as `citext` or `pgcrypto`, so they must be installable on the shadow server. As a non-superuser role, it can create only trusted extensions.
+- **SQL uploads** are limited to 1 MB. The script itself is never stored, only its checksum. For a larger schema, connect the database and import it instead.
 - **The Prisma CLI** (installed with the app) turns `schema.prisma` files into SQL. It runs in a temporary directory, without access to Skematron's secrets, and never connects to a database.
 
 ## Backups

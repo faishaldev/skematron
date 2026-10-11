@@ -184,7 +184,7 @@ export default async function BranchPage({
         href={`${here}/upload`}
         className={`button${primary ? " primary" : ""}`}
       >
-        Upload schema.prisma
+        Upload changes
       </Link>
     );
   const runTest = (label: string) => (
@@ -247,8 +247,8 @@ export default async function BranchPage({
           This branch started from {from}. Rebase it to compare with the newest
           main: the list below then also shows anything that would undo the
           newer changes
-          {dashboard ? "" : ", so upload a schema.prisma that includes them"}.
-          It then needs a new test and review.
+          {dashboard ? "" : ", so upload your changes again"}. It then needs a
+          new test and review.
         </p>
       </Callout>
     );
@@ -261,7 +261,7 @@ export default async function BranchPage({
         <p>
           {dashboard
             ? "Add tables and columns in the schema editor."
-            : "Upload the schema.prisma with your changes."}{" "}
+            : "Upload your changes: migrations or the whole schema, as SQL or a schema.prisma."}{" "}
           The changes compared with {from} then appear below.
         </p>
       </Callout>

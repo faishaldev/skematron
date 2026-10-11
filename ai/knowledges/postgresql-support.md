@@ -59,6 +59,7 @@ Introspection returns these in `unsupported` as `{ kind, namespace, table, name 
 | `invalid-index` | An index left invalid, for example by a failed `CREATE INDEX CONCURRENTLY` |
 | `sequence-of-unsupported-table` | A serial sequence owned by a table that is not captured |
 | `relation-kind-<x>`, `constraint-type-<x>` | A catalog kind this version does not recognize |
+| `migration-history` | A migration tool's history table (`_prisma_migrations`, `alembic_version`, …). Added by the dashboard, not by introspection: see "SQL scripts" below. |
 
 ## Not inspected at all
 
@@ -72,6 +73,23 @@ Neither captured nor reported:
 - Constraint validation state (`NOT VALID`).
 
 Treat these as limitations, not guarantees.
+
+## SQL scripts (uploads)
+
+The dashboard takes PostgreSQL SQL from any ORM or migration tool. `preparePostgresScript` (`packages/adapters/src/postgres/script.ts`) reads it; it executes nothing.
+
+- **Splitting follows psql:** single and double quotes, `E''` strings, dollar quotes, nested `/* */` comments, parentheses (rule actions), and `BEGIN ATOMIC … END` bodies in `CREATE FUNCTION`/`PROCEDURE`. Each statement keeps the line it starts on, for error messages.
+- **Skipped, because they cannot change a snapshot:**
+  - ownership (`ALTER … OWNER TO`, `SET ROLE`, `SET SESSION AUTHORIZATION`) and privileges (`GRANT`, `REVOKE`, `ALTER DEFAULT PRIVILEGES`)
+  - time limits (`SET statement_timeout = 0` and similar), so Skematron's own limits stay in force
+  - comments on schemas and extensions
+  - psql's setup commands (`\restrict`, `\unrestrict`, `\set`, …)
+  - rows written to a migration tool's history table (`INSERT INTO schema_migrations`, `UPDATE alembic_version`)
+- **Refused, with the line:** `COPY` (rows), statements about whole databases, roles, tablespaces, subscriptions or server settings, `LOAD`, and other psql commands such as `\connect` or `\i`. Statements that cannot run inside a transaction block (`CREATE DATABASE`) cannot hide inside `DO` blocks or functions either. The rest is not a sandbox: the shadow server's isolation is.
+- **Running:** in a fresh shadow database, one statement at a time, in autocommit like psql. A migration ("changes only") runs after the base version has been recreated. The schema is then read over a new connection, so a transaction left open is rolled back, as when psql exits.
+- **Migration history tables** are left out of the snapshot and reported as `migration-history`, for every schema read from outside: uploads and database imports alike. Only names no application would choose are listed (`MIGRATION_HISTORY_TABLES` in `packages/adapters/src/migration-history.ts`); a table that takes part in foreign keys stays.
+- **Equivalent, not identical:** a migration adds columns at the end of a table, so a migrated schema and one created from scratch can differ in column positions, which planning ignores.
+- **Tested against real output** of pg_dump, Drizzle, Knex, Django, Alembic and Prisma: `packages/adapters/src/postgres/fixtures/scripts/`.
 
 ## Planner behavior and risk
 

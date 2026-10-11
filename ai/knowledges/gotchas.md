@@ -31,6 +31,15 @@ Things that surprised someone or cost time, and what to do about them. Add new o
 - **No inline `# comments` in copy-paste command blocks.** Interactive zsh does not treat `#` as a comment unless `setopt interactivecomments` is on, so `pnpm example:export demo  # read it` passes `#`, `read`, `it` as arguments. Explain commands in prose and keep the blocks to commands only.
 - **Do not hand people multi-line `node -e '…'` snippets.** Pasting them into zsh fails in confusing ways: a partial paste runs JavaScript as shell (`parse error near '}'`), and a `cd` at the top runs from the wrong directory. Give them a script and a `pnpm` command instead, like `pnpm example:export`.
 
+- **pg_dump writes psql commands now.** pg_dump 17.6, 16.10, 15.14, 14.19 and later put `\restrict <key>` and `\unrestrict <key>` lines around plain-format output. They are not SQL; `preparePostgresScript` skips them as psql commands.
+- **pg_dump sets `search_path` to empty** (`set_config('search_path', '', false)`) and `statement_timeout = 0` for the rest of the session. Skematron skips the time limits, and reads the schema over a new connection after a script, so neither leaks into introspection.
+- **Django 6 refuses PostgreSQL 14** ("PostgreSQL 15 or later is required"), even for `sqlmigrate`. The local cluster is 14, so the Django fixtures were made with Django 5.2.
+- **A migrated schema is equivalent, not identical, to one created from scratch.** Columns added by `ALTER TABLE … ADD COLUMN` come last, so the snapshots' column positions differ. Compare with `isEmptyPlan(planMigration(a, b))`, not checksums.
+- **A non-superuser's `DROP DATABASE … WITH (FORCE)` fails while an autovacuum worker is in the database** ("must be a member of the role whose process is being terminated or member of pg_signal_backend"): the worker belongs to no role the shadow role may signal. It leaves soon, so `lib/shadow.ts` retries the drop. A test holds a superuser session open to reproduce it.
+- **`node --test` runs test files in parallel.** Two files that use the shadow server see each other's `skematron_shadow_*` databases, so never assert on the whole list; check the databases a test created, by name.
+- **`next build` replaces `.next` under a running `next start`.** A production server started from the same `apps/web` breaks for whoever is using it. While someone uses one, check layout changes with `next dev` on another port (it writes to `.next/dev`), and rebuild only after it is stopped.
+- **Chrome never shrinks a file input below its content (about 330px)**, and a grid `label` around it inherits that minimum. On phones that widened whole forms. `label` and `input[type="file"]` have `min-width: 0` in `globals.css`.
+
 ## Next.js (apps/web)
 
 - **`next dev` writes `apps/web/AGENTS.md`** (Next 16.4 "agent rules"). It tells agents to read the version-matched docs in `apps/web/node_modules/next/dist/docs/` first. Commit the file; deleting it only brings it back.

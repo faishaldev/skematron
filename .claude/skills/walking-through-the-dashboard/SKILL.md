@@ -15,6 +15,7 @@ Read `ai/rules/web.md` and `ai/rules/testing.md` first.
 
 1. **Leave the developer's setup alone.**
    - Check with `lsof -nP -iTCP:3100 -sTCP:LISTEN`. A running `next dev` belongs to the developer: do not stop it.
+   - The developer may also start using your scratch server. If its database gains data you did not create (for example an organization set up in `/setup`), leave that server and database alone, use another port and database name, and ask before removing them. Do not run `next build` while their `next start` runs from the same `.next`; check layout changes with `next dev` on another port instead.
    - Never create test accounts or data in the `skematron` dev database.
 2. **Build.** Run `pnpm --filter @skematron/web build`. It can run next to `next dev`, because Next 16 keeps dev output in `.next/dev`. The build must pass anyway.
 3. **Make a scratch metadata database** in the local cluster (`pnpm db:start` first), with a name you will drop later, for example `skematron_e2e`:

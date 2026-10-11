@@ -67,8 +67,9 @@ export default async function NewProjectPage({
             <span>
               <strong>In code</strong>
               <span className="hint">
-                Your team edits a schema.prisma (or the database itself).
-                Changes are uploaded to branches in Skematron.
+                Your team changes the schema in its own repository, with any ORM
+                or migration tool. Each change comes into a branch by reading a
+                connected database or uploading the schema file (Prisma so far).
               </span>
             </span>
           </label>

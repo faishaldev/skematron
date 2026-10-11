@@ -40,6 +40,8 @@ export default async function VersionPage({
     baseVersion?: string;
     branch?: string;
     via?: string;
+    script?: string;
+    onVersion?: string;
   };
   const fromPrisma =
     source.kind === "prisma-schema" || source.via === "prisma-schema";
@@ -48,14 +50,20 @@ export default async function VersionPage({
   const { script, statements } = renderPostgresMigration(
     planMigration(emptySnapshot("postgresql"), snapshot),
   );
+  const sql =
+    source.script === "changes"
+      ? `SQL migrations applied to v${source.onVersion ?? "?"}`
+      : "SQL of the whole schema";
   const origin =
     source.kind === "branch"
-      ? `branch ${source.branch} (${source.via === "prisma-schema" ? `a schema.prisma, Prisma ${source.prismaVersion ?? "?"}` : source.via === "introspection" ? `the ${source.environmentName ?? "?"} database` : "the schema editor"}), merged into main`
+      ? `branch ${source.branch} (${source.via === "prisma-schema" ? `a schema.prisma, Prisma ${source.prismaVersion ?? "?"}` : source.via === "sql-script" ? sql : source.via === "introspection" ? `the ${source.environmentName ?? "?"} database` : "the schema editor"}), merged into main`
       : fromPrisma
         ? `schema.prisma (Prisma ${source.prismaVersion ?? "?"})`
-        : source.kind === "dashboard"
-          ? `the schema editor (${source.baseVersion === "none" || source.baseVersion === undefined ? "a new schema" : `based on v${source.baseVersion}`})`
-          : `the ${source.environmentName ?? "?"} database (PostgreSQL ${source.serverVersion ?? "?"})`;
+        : source.kind === "sql-script"
+          ? sql
+          : source.kind === "dashboard"
+            ? `the schema editor (${source.baseVersion === "none" || source.baseVersion === undefined ? "a new schema" : `based on v${source.baseVersion}`})`
+            : `the ${source.environmentName ?? "?"} database (PostgreSQL ${source.serverVersion ?? "?"})`;
   const tables = snapshot.namespaces.flatMap((namespace) => namespace.tables);
   const columnCount = tables.reduce(
     (total, table) => total + table.columns.length,

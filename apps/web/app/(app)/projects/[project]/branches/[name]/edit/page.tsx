@@ -146,7 +146,7 @@ export default async function EditBranchPage({
         {crumbs}
         <ErrorPanel
           title="This schema is written in code"
-          error="Upload the changed schema.prisma to the branch instead. An admin can switch the project to the schema editor in its settings."
+          error="Upload your changes to the branch instead. An admin can switch the project to the schema editor in its settings."
         />
       </>
     );

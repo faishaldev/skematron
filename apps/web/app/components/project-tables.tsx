@@ -98,6 +98,8 @@ export function VersionTable({
                   </Link>
                 ) : origin.kind === "prisma-schema" ? (
                   "schema.prisma (baseline)"
+                ) : origin.kind === "sql-script" ? (
+                  "SQL file (baseline)"
                 ) : origin.kind === "dashboard" ? (
                   "Schema editor"
                 ) : (

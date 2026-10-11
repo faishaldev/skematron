@@ -1,8 +1,8 @@
 # Architecture
 
-Status as of 2026-10-10: pre-alpha.
+Status as of 2026-10-11: pre-alpha.
 
-- **What exists:** two libraries, an artifact store, and the dashboard (single-organization mode) with versions, Prisma schema import, and migrations that are planned with guided questions, checked in a shadow database and reviewed by a second person.
+- **What exists:** two libraries, an artifact store, and the dashboard (single-organization mode) with versions, schema import from SQL (any ORM or migration tool) and from Prisma, and migrations that are planned with guided questions, checked in a shadow database and reviewed by a second person.
 - **Not built yet:** applying migrations to environments (Phase 1b), the CLI, and deployment packaging.
 
 ## Packages and apps
@@ -10,7 +10,7 @@ Status as of 2026-10-10: pre-alpha.
 | Package | Path | Purpose | May import |
 | --- | --- | --- | --- |
 | `@skematron/core` | `packages/core` | Snapshot model, canonical form and checksum, schema editing, migration planning. Pure and deterministic. | Only its own modules |
-| `@skematron/adapters` | `packages/adapters` | Database adapter: PostgreSQL introspection and SQL rendering (`postgres/`). Schema-tool adapter: Prisma Schema preparation (`prisma/`). The two never import each other. | Its own modules and `@skematron/core` |
+| `@skematron/adapters` | `packages/adapters` | Database adapter: PostgreSQL introspection, SQL rendering and SQL script splitting (`postgres/`). Schema-tool adapter: Prisma Schema preparation (`prisma/`). The two never import each other. Tool-neutral: the history tables migration tools keep for themselves (`migration-history.ts`). | Its own modules and `@skematron/core` |
 | `@skematron/storage` | `packages/storage` | Content-addressed, checksum-verified artifact files (key = `sha256:<hex>`). | Node built-ins and its own modules |
 | `@skematron/web` | `apps/web` | The dashboard: Next.js 16, Better Auth, Prisma 7 against the metadata database. | Everything above, plus `pg`, Next.js, React, Better Auth, Prisma |
 
@@ -39,6 +39,7 @@ Status as of 2026-10-10: pre-alpha.
   - Versions are stored as artifacts and recorded as `schema_version` rows, numbered per project under an advisory lock (`lib/versions.ts`).
 - **Main grows in two ways only:**
   - **The baseline (v1):**
+    - a SQL file of the whole schema (`lib/sql-import.ts`), from any ORM or migration tool, or
     - a `schema.prisma` import (`lib/prisma-import.ts`), or
     - the first import from an environment (`importEnvironment` in `lib/branches.ts`).
   - **Merged branches**, for everything after that.
@@ -48,6 +49,7 @@ Status as of 2026-10-10: pre-alpha.
   - **Contents:** a branch starts from the latest version on main (its base) with a copy of its schema (its head).
   - **Changing the head:**
     - The schema editor, for "dashboard" projects. Core's edit functions apply each edit (`lib/schema-edits.ts`, `edit.ts`), then `normalizeSnapshot` rebuilds the head in a shadow database.
+    - Uploading SQL, for "code" projects (`uploadSqlToBranch`): either the whole schema, run in an empty shadow database, or migrations (changes only), run on top of the branch's base version. Each upload starts again from the base, so a branch's migrations are uploaded together.
     - Uploading a `schema.prisma`, for "code" projects: Prisma CLI, then shadow database.
   - Every change is refused if the branch changed since it was loaded (optimistic check on `updatedAt`), and sends the review back to draft.
   - **Shared:** the team sees branches, and members can edit them. Everyone who changes, rebases or tests a branch is recorded in `contributorIds`.
@@ -56,10 +58,11 @@ Status as of 2026-10-10: pre-alpha.
     - main still at the branch's base
   - **Rebase** moves the base to the latest version. The head stays, so anything that would undo newer work on main shows up in the list. **Close** ends the branch without recording anything.
 - **Schema source** (`project.schemaSource`):
-  - "code": the baseline and branch contents come from `schema.prisma` uploads (or environment imports).
+  - "code": the baseline and branch contents come from uploads (SQL or `schema.prisma`) or environment imports, so any ORM or migration tool works.
   - "dashboard": branch contents come from the schema editor.
 
-  Prisma uploads work only for "code", and the editor only for "dashboard".
+  Uploads work only for "code", and the editor only for "dashboard".
+- **Migration tools' history tables** (`_prisma_migrations`, `alembic_version`, `django_migrations`, … in `MIGRATION_HISTORY_TABLES`) are the tools' bookkeeping. Every schema read from outside (environment imports, drift checks, uploaded SQL, Prisma) leaves them out and lists them as not tracked (`lib/migration-history.ts`), so a database and a schema file of the same app compare as equal. The editor never filters.
 - **Migrations** (`lib/migrations.ts`) are the review of a branch (one per branch), from its base to its head:
   - **Content lives in immutable revisions.** Each test run makes one, and each stores:
     - the answers
@@ -76,15 +79,16 @@ Status as of 2026-10-10: pre-alpha.
 - **The shadow database** (`lib/shadow.ts`, `SKEMATRON_SHADOW_DATABASE_URL`) is a dedicated, disposable server:
   - Each run creates a `skematron_shadow_<random>` database and always drops it. The role must not be a superuser.
   - Verification recreates the `from` version (plus the extensions it reports), runs the plan statement by statement, and requires the result to match `to`.
+  - Uploaded scripts (`snapshotFromScript`) run statement by statement, after `preparePostgresScript` has split them and set aside what to skip or refuse. The schema is then read over a new connection, as after psql exits. Prisma's DDL takes the same path.
 - **Pages:**
   - Every signed-in page has the sidebar (`app/(app)/layout.tsx`): a project switcher (with the list of all projects), the current project's sections (the last project opened when the page is outside a project), the workspace (members, audit log), and the account.
   - `/projects` (project cards), `/projects/new` (create a project and choose its schema source), `/projects/[project]` (overview: next step, counts, open branches, diagram of main)
   - `/projects/[project]/{branches,versions,diagram,environments,settings}`: the project's sections. `diagram` takes `?version=` or `?branch=`.
   - `/projects/[project]/environments/{new,[environment]}`
   - `/projects/[project]/versions/[n]` (diagram, or `?view=tables`), with `export.sql` and `snapshot.json` downloads, and `schema.prisma` for Prisma imports
-  - `/projects/[project]/versions/new`: import the baseline `schema.prisma`
+  - `/projects/[project]/versions/new`: import the baseline from SQL or a `schema.prisma`, with help for common tools (`components/schema-file-help.tsx`)
   - `/projects/[project]/branches/new`, `/projects/[project]/branches/[name]` (changes, questions, test run, review, merge, rebase, close; `migration.sql` download)
-  - `/projects/[project]/branches/[name]/edit` (schema editor) and `/projects/[project]/branches/[name]/upload` (`schema.prisma`)
+  - `/projects/[project]/branches/[name]/edit` (schema editor) and `/projects/[project]/branches/[name]/upload` (SQL migrations, SQL of the whole schema, or `schema.prisma`)
   - `/projects/[project]/compare?from=&to=` between two versions, or `?from=&environment=` for drift
   - `/settings/members`, `/settings/audit`
 - **Server modules (`apps/web/lib`):**
@@ -94,8 +98,10 @@ Status as of 2026-10-10: pre-alpha.
   - `members.ts`
   - `projects.ts`: projects and environments
   - `targets.ts`: the only module that decrypts environment URLs and connects to user databases (read-only)
-  - `shadow.ts`: temporary databases on the shadow server, `snapshotFromDdl`, `verifyMigration`
+  - `shadow.ts`: temporary databases on the shadow server, `snapshotFromScript`, `normalizeSnapshot`, `verifyMigration`
+  - `sql-import.ts`: SQL scripts (whole schema or changes) through the shadow database; only the script's checksum is kept
   - `prisma-import.ts`: runs the Prisma CLI in a temporary directory with a minimal environment
+  - `migration-history.ts`: leaves migration tools' history tables out of schemas read from outside
   - `branches.ts`: the branch workflow (create, edit, upload, import from a database, test, submit, review, rebase, merge, close)
   - `migrations.ts`: revisions, test runs and the review rules
   - `schema-edits.ts`: editor edits as data; `schema-input.ts`: checks for typed names, types and defaults
@@ -116,10 +122,15 @@ Status as of 2026-10-10: pre-alpha.
 ## Data flow
 
 ```text
-PostgreSQL database (an environment)        schema.prisma
-   │  introspectPostgres(session)                │  preparePrismaSchema → prisma migrate diff → DDL
-   │  read-only, always rolled back              │  DDL runs in a shadow database, then introspectPostgres
-   ▼                                             ▼
+PostgreSQL database (an environment)    SQL file (any tool)              schema.prisma
+   │  introspectPostgres(session)          │  preparePostgresScript         │  preparePrismaSchema → prisma migrate diff
+   │  read-only, always rolled back        │  runs in a shadow database     │  the DDL takes the SQL path
+   │                                       │  (on top of the base version    │
+   │                                       │  for migrations), then         │
+   │                                       │  introspectPostgres            │
+   ▼                                       ▼                                ▼
+   migration tools' history tables are left out and listed as not tracked
+   ▼
 SchemaSnapshot + unsupported[]         what was captured, and what was reported but not captured
    │  canonicalizeSnapshot / serializeSnapshot / snapshotChecksum
    ▼
@@ -152,7 +163,7 @@ migration revision                     plan + script artifacts, verification res
 - **Hosted SaaS mode:** several organizations, an SSRF guard for user-supplied hosts, quotas, entitlements and billing.
 - **`apps/cli`,** with API tokens.
 - **Apply (Phase 1b):** run an approved revision against a non-production environment, with locks, checks before and after, and per-environment history. Production protection comes after that.
-- **More schema-tool adapters:** SQL DDL, multi-file Prisma schemas, importing `prisma/migrations` history.
+- **More schema-tool adapters:** multi-file Prisma schemas, importing a tool's migration history (`prisma/migrations`, `_prisma_migrations`).
 - **Docker Compose** packaging.
 
 ## Tooling

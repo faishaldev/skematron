@@ -537,6 +537,15 @@ td pre {
   padding: 8px 10px;
 }
 
+/* The "How do I get SQL" help: commands wrap instead of widening the page. */
+.tool-help td:first-child {
+  width: 34%;
+}
+
+.tool-help td {
+  overflow-wrap: anywhere;
+}
+
 /* ---- Badges and pills ---- */
 
 .badge {
@@ -731,6 +740,7 @@ label {
   gap: 5px;
   font-size: 14px;
   font-weight: 500;
+  min-width: 0;
 }
 
 label .hint {
@@ -754,6 +764,12 @@ select:focus,
 textarea:focus {
   outline: 2px solid var(--accent-soft);
   border-color: var(--accent);
+}
+
+/* Chrome never lets a file input's content (about 330px) shrink, which widened whole forms
+   on phones; let the input itself shrink to its label instead. */
+input[type="file"] {
+  min-width: 0;
 }
 
 input[type="checkbox"],

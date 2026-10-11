@@ -85,9 +85,21 @@ All notable changes to Skematron are recorded here. The format follows [Keep a C
   - Importing a `schema.prisma` works only for "code" projects, and the editor only for "dashboard" projects, so a project never has two sources of truth.
 - **`@skematron/core` schema editing:** `addTable`, `addColumn`, `addUniqueConstraint`, `addIndex` and `addForeignKey` return a new, validated snapshot.
 - **`@skematron/adapters` `renderIndexDefinition`:** the `CREATE INDEX` statement for a new B-tree index, with every name quoted.
+- **Schemas from any ORM or migration tool, as SQL.** Projects whose schema is written in code now take PostgreSQL SQL, not only `schema.prisma`:
+  - **The whole schema**, for the first version or a branch: `pg_dump --schema-only`, Rails' `structure.sql`, `drizzle-kit export`, `alembic upgrade head --sql`, and so on. It runs in an empty shadow database.
+  - **Migrations (only the changes)**, for a branch: Django's `sqlmigrate`, a Prisma `migration.sql`, `alembic upgrade <from>:<to> --sql`. They run on top of the branch's base version. Each upload starts again from that version, so uploading a fixed migration replaces it.
+  - Ownership, privileges, time limits and psql's own commands in a dump are skipped. Scripts with rows (`COPY`) or statements about whole databases, roles or the server are refused, with the line. A statement that fails is named with its number, line and PostgreSQL's message.
+  - Only the script's checksum is kept, never the script. Uploads are limited to 1 MB.
+  - The import and upload pages have a "How do I get SQL from my ORM or migration tool?" panel.
+  - Tested against real output of pg_dump, Drizzle, Knex, Django, Alembic and Prisma.
+- **`@skematron/adapters` `preparePostgresScript`:** splits a PostgreSQL script the way psql does (quotes, dollar quotes, nested comments, `BEGIN ATOMIC` bodies) and sorts its statements into run, skip and refuse.
+- **`@skematron/adapters` `withoutMigrationHistory`** and `MIGRATION_HISTORY_TABLES`: the history tables of Prisma, Drizzle, Alembic, Django, Rails, Knex, Kysely, Sequelize, MikroORM, node-pg-migrate, Flyway, Liquibase, goose, SQLx and Entity Framework Core.
 
 ### Changed
 
+- **Migration tools' history tables are no longer tracked.** `_prisma_migrations`, `alembic_version`, `django_migrations`, `schema_migrations` and similar tables are left out of database imports, drift checks and uploads, and listed as not tracked. A database and a schema file of the same app now compare as equal. Versions imported earlier still contain them, so the next import shows them as removed once.
+- **Prisma's SQL runs one statement at a time** in the shadow database, so an error names the statement and its line.
+- **Buttons and steps no longer assume Prisma:** "Import a schema file" for the first version, and "Upload changes" on branches, with a choice of SQL migrations, SQL of the whole schema, or a `schema.prisma`. The upload page preselects the kind the branch, or its base version, last used.
 - **A sidebar and schema diagrams make the dashboard easier to find your way around.**
   - **The sidebar** starts with a project switcher (the current project, with every project, "View all projects" and "New project" in its menu). Below it are the current project's sections, with icons and the number of open branches. They stay visible on every page: outside a project, the sidebar shows the last project you opened:
     - Overview: the next step, counts, open branches, and a diagram of main
@@ -121,9 +133,13 @@ All notable changes to Skematron are recorded here. The format follows [Keep a C
   - **Other pages:**
     - Projects are listed as cards that fill the page, each with its schema source, its latest version on main, and its open branches and databases.
     - A new project is created on its own page (`/projects/new`, from "New project" on the list or in the project switcher), choosing its schema source from two described options.
+    - The "In code" schema source is described for any ORM or migration tool (changes come from a connected database or an uploaded schema file), instead of as a `schema.prisma`. Prisma is named only as the schema file format supported so far.
     - Sign-in, setup and invitations are a centered card.
     - Light and dark mode are both polished.
 
 ### Fixed
+
+- **Forms with a file input no longer run off the side of the screen on phones.**
+- **A test run, import or upload no longer fails at random when PostgreSQL's autovacuum visits the shadow database.** The role could not end that session, so dropping the temporary database failed ("must be a member of the role whose process is being terminated") and the database was left behind. The drop is now retried for a few seconds.
 
 - **A running `pnpm web` no longer fails with "Cannot read properties of undefined (reading 'findMany')" after a metadata schema change.** The dashboard rebuilds its Prisma client when the generated client changes, instead of keeping the old one across hot reloads.

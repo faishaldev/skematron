@@ -82,7 +82,7 @@ export default async function NewBranchPage({
           Next:{" "}
           {dashboard
             ? "add tables and columns in the schema editor."
-            : "upload the changed schema.prisma."}
+            : "upload your changes (SQL or a schema.prisma)."}
         </p>
         <div>
           <button type="submit" className="primary">

@@ -65,8 +65,8 @@ export default async function ProjectSettingsPage({
             <span>
               <strong>In code</strong>
               <span className="hint">
-                Branches get their changes from uploaded schema.prisma files.
-                The schema editor is off.
+                Branches get their changes from a connected database or an
+                uploaded schema file (Prisma so far). The schema editor is off.
               </span>
             </span>
           </label>
@@ -80,8 +80,8 @@ export default async function ProjectSettingsPage({
             <span>
               <strong>In Skematron</strong>
               <span className="hint">
-                Branches are changed in the schema editor. Uploading a
-                schema.prisma is off.
+                Branches are changed in the schema editor. Uploading a schema
+                file is off.
               </span>
             </span>
           </label>

@@ -1,11 +1,21 @@
 "use server";
 
-import { field, runAction, withFlash } from "../../../../lib/actions.ts";
+import {
+  field,
+  runAction,
+  uploadedText,
+  withFlash,
+} from "../../../../lib/actions.ts";
 import { UserFacingError } from "../../../../lib/errors.ts";
 import {
   importPrismaSchema,
   MAX_PRISMA_SCHEMA_BYTES,
 } from "../../../../lib/prisma-import.ts";
+import {
+  describeSkipped,
+  importSqlSchema,
+  MAX_SQL_SCRIPT_BYTES,
+} from "../../../../lib/sql-import.ts";
 import {
   createEnvironment,
   deleteEnvironment,
@@ -153,32 +163,41 @@ export async function importVersionAction(formData: FormData): Promise<void> {
   });
 }
 
-export async function importPrismaSchemaAction(
-  formData: FormData,
-): Promise<void> {
+/** The baseline from a schema file: SQL (any tool) or a schema.prisma. */
+export async function importSchemaAction(formData: FormData): Promise<void> {
   const slug = field(formData, "project");
   await runAction(`${projectPath(slug)}/versions/new`, async () => {
     const actor = await requirePermission("author-migrations");
     const project = await getProject(actor, slug);
-    const file = formData.get("schemaFile");
-    let text = field(formData, "schemaText");
-    if (file instanceof File && file.size > 0) {
-      if (file.size > MAX_PRISMA_SCHEMA_BYTES) {
-        throw new UserFacingError(
-          `The file is larger than ${MAX_PRISMA_SCHEMA_BYTES / 1024} KB.`,
-        );
-      }
-      text = await file.text();
+    const format = field(formData, "format");
+    let number: number;
+    let detail: string;
+    if (format === "sql") {
+      const result = await importSqlSchema(
+        actor,
+        project,
+        await uploadedText(formData, MAX_SQL_SCRIPT_BYTES),
+      );
+      number = result.number;
+      detail = describeSkipped(result.skipped);
+    } else if (format === "prisma") {
+      const result = await importPrismaSchema(
+        actor,
+        project,
+        await uploadedText(formData, MAX_PRISMA_SCHEMA_BYTES),
+      );
+      number = result.number;
+      detail =
+        result.removed.length === 0
+          ? ""
+          : ` Removed from the stored file: ${result.removed.join(", ")}.`;
+    } else {
+      throw new UserFacingError("Choose the file's format.");
     }
-    const result = await importPrismaSchema(actor, project, text);
-    const removed =
-      result.removed.length === 0
-        ? ""
-        : ` Removed from the stored file: ${result.removed.join(", ")}.`;
     return withFlash(
-      `${projectPath(slug)}/versions/${result.number}`,
+      `${projectPath(slug)}/versions/${number}`,
       "notice",
-      `Imported schema.prisma as version ${result.number}, the starting point on main. Start a branch for the next change.${removed}`,
+      `Imported the schema as version ${number}, the starting point on main. Start a branch for the next change.${detail}`,
     );
   });
 }
@@ -195,7 +214,7 @@ export async function setSchemaSourceAction(formData: FormData): Promise<void> {
       "notice",
       source === "dashboard"
         ? "The schema is now written in the dashboard: use Edit schema."
-        : "The schema is now written in code: import versions from a schema.prisma or an environment.",
+        : "The schema is now written in code: branches get their changes from a connected database or an uploaded schema file.",
     );
   });
 }

@@ -260,3 +260,23 @@ An append-only log of design decisions.
   - It draws SVG on the server: rows with PK and FK markers, links as curves between neighboring columns, and lanes above the tables for links that skip columns.
   - Branch changes are colored from the planner's operations (`diagramHighlights`).
 - **Consequences.** There is nothing to install and nothing runs in the browser, and the output is deterministic. Very large schemas get wide diagrams that scroll; there is no zooming, panning or manual arrangement yet.
+
+## D24: SQL scripts are the way in for any ORM or migration tool (2026-10-11, accepted)
+
+- **Context.** Skematron is ORM-agnostic, but schema files could only come from Prisma. Writing an adapter per tool (Drizzle, TypeORM, Django, Rails, Alembic, Knex, Laravel, …) would never end, and many tools keep their schema as code or as a series of migrations, not as one file. Every one of them can produce PostgreSQL SQL, though, or apply its migrations to a database that `pg_dump --schema-only` can read.
+- **Decision.**
+  - "Code" projects accept SQL scripts, for the baseline and for branches. A script is either the whole schema, run in an empty shadow database, or changes only (migrations), run on top of the branch's base version, which is recreated first. Each upload starts again from the base, so re-uploading a fixed migration replaces it instead of applying it twice.
+  - `preparePostgresScript` (`postgres/script.ts`, part of the PostgreSQL adapter) splits scripts the way psql does, skips statements that cannot change a snapshot (ownership, privileges, time limits, psql setup, rows of a migration history table), and refuses the ones that act outside one database or move rows (`COPY`), with the line number. Prisma's DDL now takes the same path.
+  - Statements run one at a time, so an error names the statement and its line. The schema is read over a new connection, as after psql exits.
+  - Only the script's checksum is kept (`sql-script` source with `script: schema|changes` and `scriptChecksum`), never the script: it may contain rows (INSERTs), and the version's snapshot and export give the schema back.
+  - Uploads are capped at 1 MB; larger schemas can be imported from a connected database instead.
+- **Consequences.**
+  - Any tool works without a dedicated adapter. Tested against real output of pg_dump, Drizzle, Knex, Django, Alembic and Prisma (`postgres/fixtures/scripts/`).
+  - Like D17's Prisma import, members can run their own SQL in the shadow database, now directly. The refusals give clear messages but are not a sandbox: the dedicated server, the non-superuser role, the per-run database and the timeouts are the boundary. Hosted multi-tenant mode still needs stronger isolation.
+  - A migration produces an equivalent schema, not always an identical one: added columns land at the end of a table.
+
+## D25: Migration tools' history tables are not tracked (2026-10-11, accepted)
+
+- **Context.** `_prisma_migrations`, `alembic_version`, `django_migrations`, Rails' `schema_migrations` and similar tables exist in every database a tool manages, and in its dumps, but never in its schema files or SQL exports. Mixing sources (a database import for the baseline, schema files on branches) showed them as deleted, and an apply step would have dropped them.
+- **Decision.** Every schema read from outside Skematron (environment imports, drift checks, SQL scripts, Prisma) leaves out the tables in `MIGRATION_HISTORY_TABLES` (`@skematron/adapters`) and lists them as not tracked, kind `migration-history`. Only names no application would choose are listed; generic ones such as `migrations` (Laravel, TypeORM) stay tracked. A table that takes part in foreign keys stays too. Schemas written in the editor are never filtered.
+- **Consequences.** A database and a schema file of the same app compare as equal. Versions imported before this change still contain these tables, so the next database import or upload shows them as removed once.

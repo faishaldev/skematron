@@ -7,6 +7,7 @@ import {
 } from "@skematron/adapters";
 import { secretKey } from "./env.ts";
 import { UserFacingError } from "./errors.ts";
+import { untrackMigrationHistory } from "./migration-history.ts";
 import { decryptSecret } from "./secrets.ts";
 
 interface Target {
@@ -54,9 +55,14 @@ async function withTarget<T>(
   }
 }
 
-/** Reads the tracked schemas of an environment (read-only introspection). */
+/**
+ * Reads the tracked schemas of an environment (read-only introspection). Migration tools'
+ * history tables are listed as not tracked.
+ */
 export function readLive(target: Target): Promise<PostgresIntrospection> {
-  return withTarget(target, (client) =>
-    introspectPostgres(client, { namespaces: target.namespaces }),
+  return withTarget(target, async (client) =>
+    untrackMigrationHistory(
+      await introspectPostgres(client, { namespaces: target.namespaces }),
+    ),
   );
 }

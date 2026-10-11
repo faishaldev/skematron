@@ -73,7 +73,7 @@ export default async function ProjectPage({
           canAuthor ? (
             <>
               <Link href={`${base}/versions/new`} className="button primary">
-                Import schema.prisma
+                Import a schema file
               </Link>
               {canManage && (
                 <Link href={`${base}/environments/new`} className="button">
@@ -85,9 +85,10 @@ export default async function ProjectPage({
         }
       >
         <p>
-          Import your schema.prisma, or connect a database and import its
-          schema. It becomes v1 on main, the starting point. After that, every
-          change goes through a branch.
+          Import a schema file (SQL from any ORM or migration tool, or a
+          schema.prisma), or connect a database and import its schema. It
+          becomes v1 on main, the starting point. After that, every change goes
+          through a branch.
         </p>
       </Callout>
     );

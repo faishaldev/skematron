@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { NotFoundError } from "../../../../../../lib/errors.ts";
 import { MAX_PRISMA_SCHEMA_BYTES } from "../../../../../../lib/prisma-import.ts";
 import { getProject } from "../../../../../../lib/projects.ts";
+import { MAX_SQL_SCRIPT_BYTES } from "../../../../../../lib/sql-import.ts";
 import { can } from "../../../../../../lib/roles.ts";
 import { requireActor } from "../../../../../../lib/session.ts";
 import { listVersions } from "../../../../../../lib/versions.ts";
@@ -14,7 +15,8 @@ import {
   PageHeader,
   type SearchParams,
 } from "../../../../../components/ui.tsx";
-import { importPrismaSchemaAction } from "../../actions.ts";
+import { SchemaFileHelp } from "../../../../../components/schema-file-help.tsx";
+import { importSchemaAction } from "../../actions.ts";
 
 export const dynamic = "force-dynamic";
 
@@ -41,7 +43,7 @@ export default async function NewVersionPage({
       items={[
         { label: "Projects", href: "/projects" },
         { label: project.name, href: `/projects/${project.slug}` },
-        { label: "Import schema.prisma" },
+        { label: "Import the schema" },
       ]}
     />
   );
@@ -50,7 +52,7 @@ export default async function NewVersionPage({
     return (
       <>
         {crumbs}
-        <PageHeader title="Import schema.prisma" />
+        <PageHeader title="Import the schema" />
         <Callout
           title={`Main already starts at v1 (now v${latest.number})`}
           actions={
@@ -63,8 +65,8 @@ export default async function NewVersionPage({
           }
         >
           <p>
-            Changes go through a branch: start one, upload the changed
-            schema.prisma there, test it and get it reviewed, then merge it.
+            Changes go through a branch: start one, upload the changed schema or
+            the migration there, test it and get it reviewed, then merge it.
           </p>
         </Callout>
       </>
@@ -74,43 +76,71 @@ export default async function NewVersionPage({
     <>
       {crumbs}
       <PageHeader
-        title="Import schema.prisma"
-        subtitle={`Upload your current Prisma schema. It becomes v1 on main, the starting point of ${project.name}; later changes go through branches. Prisma itself turns it into SQL, which runs in a temporary database; no database of yours is touched.`}
+        title="Import the schema"
+        subtitle={`Upload your current schema, from any ORM or migration tool. It becomes v1 on main, the starting point of ${project.name}; later changes go through branches. The file runs in a temporary database; no database of yours is touched.`}
       />
       <Flash searchParams={searchParams} />
-      <form
-        action={importPrismaSchemaAction}
-        className="stack card"
-        style={{ maxWidth: 720 }}
-      >
-        <input type="hidden" name="project" value={project.slug} />
-        <label>
-          schema.prisma file
-          <input name="schemaFile" type="file" accept=".prisma,text/plain" />
-        </label>
-        <label>
-          Or paste the schema
-          <textarea
-            name="schemaText"
-            rows={14}
-            spellCheck={false}
-            placeholder={
-              'datasource db {\n  provider = "postgresql"\n}\n\nmodel User {\n  id Int @id @default(autoincrement())\n}'
-            }
-          />
-        </label>
-        <span className="hint">
-          PostgreSQL schemas only, one file, up to{" "}
-          {MAX_PRISMA_SCHEMA_BYTES / 1024} KB. Connection URLs (<code>url</code>
-          , <code>directUrl</code>, <code>shadowDatabaseUrl</code>) are removed
-          before anything is stored.
-        </span>
-        <div>
-          <button type="submit" className="primary">
-            Import
-          </button>
-        </div>
-      </form>
+      <div className="stack" style={{ maxWidth: 720 }}>
+        <form action={importSchemaAction} className="stack card">
+          <input type="hidden" name="project" value={project.slug} />
+          <fieldset>
+            <legend>What is the file?</legend>
+            <label className="option">
+              <input type="radio" name="format" value="sql" defaultChecked />
+              <span>
+                <strong>SQL that creates the whole schema</strong>
+                <span className="hint">
+                  From any tool: <code>pg_dump --schema-only</code>, Rails&apos;
+                  structure.sql, <code>drizzle-kit export</code>,{" "}
+                  <code>alembic upgrade head --sql</code>, and so on. Up to{" "}
+                  {MAX_SQL_SCRIPT_BYTES / 1024 / 1024} MB. The file itself is
+                  not stored.
+                </span>
+              </span>
+            </label>
+            <label className="option">
+              <input type="radio" name="format" value="prisma" />
+              <span>
+                <strong>A Prisma schema (schema.prisma)</strong>
+                <span className="hint">
+                  Prisma turns it into SQL. One file, up to{" "}
+                  {MAX_PRISMA_SCHEMA_BYTES / 1024} KB. Connection URLs are
+                  removed before it is stored.
+                </span>
+              </span>
+            </label>
+          </fieldset>
+          <label>
+            File
+            <input
+              name="schemaFile"
+              type="file"
+              accept=".sql,.prisma,text/plain"
+            />
+          </label>
+          <label>
+            Or paste it
+            <textarea
+              name="schemaText"
+              rows={14}
+              spellCheck={false}
+              placeholder={
+                "CREATE TABLE users (\n  id serial PRIMARY KEY,\n  email text NOT NULL UNIQUE\n);"
+              }
+            />
+          </label>
+          <span className="hint">
+            PostgreSQL only. Using a database instead? Connect it under
+            Databases and import it from there.
+          </span>
+          <div>
+            <button type="submit" className="primary">
+              Import
+            </button>
+          </div>
+        </form>
+        <SchemaFileHelp changes={false} />
+      </div>
     </>
   );
 }
