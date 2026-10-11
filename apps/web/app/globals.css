@@ -69,16 +69,7 @@ a:hover {
   text-decoration: underline;
 }
 
-/* ---- Top bar ---- */
-
-.top {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 10px 24px;
-  border-bottom: 1px solid var(--border);
-  background: var(--surface);
-}
+/* ---- Brand ---- */
 
 .brand {
   display: flex;
@@ -103,30 +94,8 @@ a:hover {
   font-size: 14px;
 }
 
-.top .nav {
-  display: flex;
-  gap: 4px;
-  margin-left: 16px;
-}
-
-.top .nav a {
-  color: var(--muted);
-  padding: 6px 10px;
-  border-radius: 6px;
-}
-
-.top .nav a:hover {
-  color: var(--text);
-  background: var(--surface-2);
-  text-decoration: none;
-}
-
 .spacer {
   flex: 1;
-}
-
-.top form {
-  margin: 0;
 }
 
 .tag {
@@ -932,4 +901,289 @@ a.project-card:hover {
 a.project-card h3 {
   margin: 0 0 6px;
   font-size: 16px;
+}
+
+/* ---- App shell: sidebar and page ---- */
+
+.shell {
+  display: grid;
+  grid-template-columns: 248px minmax(0, 1fr);
+  min-height: 100vh;
+}
+
+.shell > main {
+  width: 100%;
+  /* Lets wide content (diagrams, tables) scroll inside its card instead of widening the page. */
+  min-width: 0;
+}
+
+.sidebar {
+  position: sticky;
+  top: 0;
+  height: 100vh;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 16px 12px;
+  background: var(--surface);
+  border-right: 1px solid var(--border);
+}
+
+.sidebar .brand {
+  padding: 4px 8px;
+}
+
+.side-nav {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  flex: 1;
+}
+
+.side-group {
+  display: grid;
+  gap: 2px;
+}
+
+.side-heading {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+  padding: 0 8px 4px;
+}
+
+.side-link {
+  display: block;
+  padding: 6px 8px;
+  border-radius: 6px;
+  color: var(--text);
+  font-size: 14px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.side-link:hover {
+  background: var(--surface-2);
+  text-decoration: none;
+}
+
+.side-link.sub {
+  padding-left: 22px;
+  color: var(--muted);
+  font-size: 13.5px;
+}
+
+.side-link.active {
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.side-empty {
+  padding: 6px 8px;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.side-user {
+  margin-top: auto;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 8px 0;
+  border-top: 1px solid var(--border);
+  font-size: 14px;
+}
+
+.side-user form {
+  margin: 0;
+}
+
+@media (max-width: 860px) {
+  .shell {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .sidebar {
+    position: static;
+    height: auto;
+    border-right: none;
+    border-bottom: 1px solid var(--border);
+  }
+  .side-nav {
+    gap: 10px;
+  }
+}
+
+/* ---- Tabs (links that switch a view) ---- */
+
+.tabs {
+  display: inline-flex;
+  gap: 2px;
+  padding: 3px;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  background: var(--surface-2);
+  margin: 4px 0 12px;
+}
+
+.tabs a {
+  padding: 5px 12px;
+  border-radius: 7px;
+  color: var(--muted);
+  font-size: 14px;
+}
+
+.tabs a:hover {
+  color: var(--text);
+  text-decoration: none;
+}
+
+.tabs a.active {
+  background: var(--surface);
+  color: var(--text);
+  font-weight: 600;
+  box-shadow: var(--shadow);
+}
+
+/* ---- Entity-relationship diagram ---- */
+
+.erd-wrap {
+  overflow: auto;
+  max-height: 78vh;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  margin: 12px 0 6px;
+  background-image: radial-gradient(var(--border) 1px, transparent 1px);
+  background-size: 18px 18px;
+}
+
+.erd {
+  display: block;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+}
+
+.erd-box {
+  fill: var(--surface);
+  stroke: var(--border);
+  stroke-width: 1;
+}
+
+.erd-head {
+  fill: var(--surface-2);
+}
+
+.erd-rule {
+  stroke: var(--border);
+}
+
+.erd-title {
+  font-family:
+    ui-sans-serif,
+    system-ui,
+    -apple-system,
+    "Segoe UI",
+    sans-serif;
+  font-size: 13px;
+  font-weight: 650;
+  fill: var(--text);
+}
+
+.erd-col {
+  fill: var(--text);
+}
+
+.erd-col.optional {
+  font-style: italic;
+  fill: var(--muted);
+}
+
+.erd-type {
+  fill: var(--muted);
+}
+
+.erd-key {
+  font-size: 9px;
+  font-weight: 700;
+  fill: var(--accent);
+}
+
+.erd-edge {
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 1.4;
+  opacity: 0.55;
+}
+
+.erd-edge:hover {
+  opacity: 1;
+  stroke-width: 2.2;
+}
+
+.erd-dot {
+  fill: var(--accent);
+}
+
+.erd-table.added .erd-box {
+  stroke: var(--safe);
+  stroke-width: 2;
+}
+
+.erd-table.added .erd-head {
+  fill: var(--safe-bg);
+}
+
+.erd-table.changed .erd-box {
+  stroke: var(--caution);
+  stroke-width: 2;
+}
+
+.erd-table.changed .erd-head {
+  fill: var(--caution-bg);
+}
+
+.erd-row-bg {
+  fill: var(--safe-bg);
+}
+
+.erd-row.added .erd-col {
+  fill: var(--safe);
+  font-weight: 600;
+  font-style: normal;
+}
+
+.erd-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  align-items: center;
+}
+
+.erd-chip {
+  display: inline-block;
+  font-size: 11px;
+  font-weight: 700;
+  padding: 0 6px;
+  border-radius: 4px;
+  border: 1px solid var(--border);
+}
+
+.erd-chip.key {
+  color: var(--accent);
+}
+
+.erd-chip.added {
+  color: var(--safe);
+  background: var(--safe-bg);
+}
+
+.erd-chip.changed {
+  color: var(--caution);
+  background: var(--caution-bg);
 }

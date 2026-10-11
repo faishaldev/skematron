@@ -251,3 +251,12 @@ An append-only log of design decisions.
 - **Consequences.**
   - Main can mean "approved", not yet "applied". When apply exists (Phase 1b), approved versions are rolled out to environments.
   - Rebasing a branch whose head does not contain main's newer changes shows them as reversals. Dashboard branches have to redo those changes. Code branches upload a schema.prisma that includes them.
+
+## D23: Schema diagrams are server-rendered SVG with our own small layout (2026-10-11, accepted)
+
+- **Context.** People understand a schema faster as a diagram of tables and links than as lists. Libraries such as Mermaid, ELK or dagre would add client JavaScript or a dependency, and the dashboard has no client components for content.
+- **Decision.**
+  - `components/diagram.tsx` lays out tables in columns by dependency: referenced tables on the left, a longest-path level per table, cycles ignored for placement, long columns wrapped, and unrelated tables last.
+  - It draws SVG on the server: rows with PK and FK markers, links as curves between neighboring columns, and lanes above the tables for links that skip columns.
+  - Branch changes are colored from the planner's operations (`diagramHighlights`).
+- **Consequences.** There is nothing to install and nothing runs in the browser, and the output is deterministic. Very large schemas get wide diagrams that scroll; there is no zooming, panning or manual arrangement yet.

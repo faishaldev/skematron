@@ -185,13 +185,13 @@ export async function importPrismaSchemaAction(
 
 export async function setSchemaSourceAction(formData: FormData): Promise<void> {
   const slug = field(formData, "project");
-  await runAction(projectPath(slug), async () => {
+  await runAction(`${projectPath(slug)}/settings`, async () => {
     const actor = await requirePermission("manage-projects");
     const project = await getProject(actor, slug);
     const source = parseSchemaSource(field(formData, "schemaSource"));
     await setSchemaSource(actor, project, source);
     return withFlash(
-      projectPath(slug),
+      `${projectPath(slug)}/settings`,
       "notice",
       source === "dashboard"
         ? "The schema is now written in the dashboard: use Edit schema."

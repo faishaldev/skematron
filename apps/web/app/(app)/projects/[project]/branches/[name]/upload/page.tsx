@@ -46,6 +46,7 @@ export default async function UploadToBranchPage({
       items={[
         { label: "Projects", href: "/projects" },
         { label: project.name, href: base },
+        { label: "Branches", href: `${base}/branches` },
         { label: branch.name, href: `${base}/branches/${branch.name}` },
         { label: "Upload schema.prisma" },
       ]}

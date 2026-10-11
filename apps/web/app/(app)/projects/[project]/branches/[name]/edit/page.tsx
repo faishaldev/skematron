@@ -16,6 +16,10 @@ import {
 } from "../../../../../../../lib/projects.ts";
 import { can } from "../../../../../../../lib/roles.ts";
 import { requireActor } from "../../../../../../../lib/session.ts";
+import {
+  diagramHighlights,
+  SchemaDiagram,
+} from "../../../../../../components/diagram.tsx";
 import { PlanView } from "../../../../../../components/plan-view.tsx";
 import { SchemaView } from "../../../../../../components/schema-view.tsx";
 import {
@@ -122,6 +126,7 @@ export default async function EditBranchPage({
       items={[
         { label: "Projects", href: "/projects" },
         { label: project.name, href: base },
+        { label: "Branches", href: `${base}/branches` },
         { label: branch.name, href: here },
         { label: "Edit" },
       ]}
@@ -159,7 +164,8 @@ export default async function EditBranchPage({
   }
 
   const snapshot = headOf(branch);
-  const plan = planMigration((await baseOf(branch)).snapshot, snapshot);
+  const baseSnapshot = (await baseOf(branch)).snapshot;
+  const plan = planMigration(baseSnapshot, snapshot);
   const baseLabel =
     branch.baseVersion === null
       ? "an empty schema"
@@ -218,11 +224,18 @@ export default async function EditBranchPage({
             plan={plan}
             emptyMessage={`No changes yet: the branch is the same as ${baseLabel}. Use the panel on the right to add something.`}
           />
-          <h2>Schema in this branch</h2>
-          <SchemaView
+          <h2>Diagram</h2>
+          <SchemaDiagram
             snapshot={snapshot}
-            unsupported={headUnsupportedOf(branch)}
+            highlights={diagramHighlights(plan)}
           />
+          <details className="card">
+            <summary>Tables in detail</summary>
+            <SchemaView
+              snapshot={snapshot}
+              unsupported={headUnsupportedOf(branch)}
+            />
+          </details>
         </div>
 
         <aside className="accordion">

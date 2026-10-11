@@ -9,6 +9,7 @@ A self-hostable control plane for database schemas and migrations. It imports, v
   - Projects, and database environments with encrypted credentials.
   - Immutable schema versions, imported read-only from a database or from a Prisma `schema.prisma`.
   - Version compare, drift checks, SQL/JSON export, and an audit log.
+  - Diagrams of tables and their links, for every version and branch, with a branch's changes colored.
   - Branches: every change after the first version is a branch.
     - Its content comes from the schema editor, or from an uploaded `schema.prisma`.
     - Skematron asks instead of guessing (renames, values for existing rows) and test-runs the change in a throwaway shadow database.

@@ -33,6 +33,7 @@ export default async function NewBranchPage({
       items={[
         { label: "Projects", href: "/projects" },
         { label: project.name, href: `/projects/${project.slug}` },
+        { label: "Branches", href: `/projects/${project.slug}/branches` },
         { label: "New branch" },
       ]}
     />

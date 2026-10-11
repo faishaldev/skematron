@@ -68,6 +68,14 @@ Read before changing anything in `apps/web/`. These rules add to AGENTS.md and n
 
 ## Pages and wording
 
+- **Navigation lives in the sidebar** (`app/(app)/layout.tsx`, `components/sidebar-nav.tsx`):
+  - It lists the projects. The current project opens its sections: Overview, Branches, Main versions, Diagram, Databases and Settings.
+  - Give a new project-level area its own page under `projects/[project]/` and a sidebar entry, rather than another section on the overview.
+  - Pages load the project with `resolveProject` (`lib/project-pages.ts`).
+- **Show the schema as a diagram first** (`components/diagram.tsx`, `SchemaDiagram`):
+  - It is server-rendered SVG with no layout library: referenced tables on the left, links as curves, and links between distant columns on lanes above the tables.
+  - Color a branch's changes with `diagramHighlights(plan)`, which takes the planner's plan. Never compare raw JSON: JSONB reorders keys.
+  - The detailed tables (`SchemaView`) are the second view.
 - **Every page starts the same way:** `Breadcrumbs`, then `PageHeader` (title, optional badge and subtitle, main actions on the right), then `Flash`. These and `Callout`, `Steps`, `Empty` and `Stat` are in `app/components/ui.tsx`.
 - **Tell people what to do next.** Pages with a workflow (project, branch) show one `Callout` with the next step and its button. Empty lists use `Empty` and say how to fill them.
 - **Plain language first, SQL second.** Plans are shown with `PlanView`: one sentence per change (`describeOperation`), its risk and warnings, and the SQL behind a `<details>`. Technical steps (sequences, temporary defaults) are folded away. Checksums, history and downloads go into `<details>` too.
@@ -78,7 +86,7 @@ Read before changing anything in `apps/web/`. These rules add to AGENTS.md and n
 
 - **Server actions use `runAction()`** from `lib/actions.ts`. They redirect with `?notice=` or `?error=`, and only `messageFor()` decides what an error may show.
 - Validate every form field and URL parameter. Route parameters reach `lib/` functions only through validated lookups.
-- Use server components by default. There are no client components yet; add one only when an interaction needs it. Collapsible parts use `<details>`, which needs no JavaScript.
+- Use server components by default. The only client component is the sidebar's link list, which needs the current path to highlight where you are. Add another only when an interaction needs it. Collapsible parts use `<details>` and view switches use links (`?view=`), which need no JavaScript.
 - **Domain logic stays in `@skematron/core` and `@skematron/adapters`.** `lib/` modules hold the app logic and are testable with `node:test`:
   - Pure modules: `roles`, `secrets`, `connections`, `slugs`.
   - Metadata modules, covered by `lib/metadata.integration.test.ts`.

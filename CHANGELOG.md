@@ -88,6 +88,16 @@ All notable changes to Skematron are recorded here. The format follows [Keep a C
 
 ### Changed
 
+- **A sidebar and schema diagrams make the dashboard easier to find your way around.**
+  - **The sidebar** lists your projects. The project you are in opens its sections:
+    - Overview: the next step, counts, open branches, and a diagram of main
+    - Branches, Main versions, Diagram, Databases, and Settings (for admins)
+
+    Below them are Members, the Audit log and your account.
+  - **Diagrams:**
+    - Tables with their columns, keys and links, drawn so that tables others point to are on the left.
+    - On the new Diagram page, pick any version or open branch. Versions show a diagram first, with a Tables tab for details.
+    - On branches and in the schema editor, new tables and columns are green and changed tables amber.
 - **Schema changes now go through branches, like git.**
   - **Main:** the line of approved versions. Its first version (the baseline) is imported from a `schema.prisma` or a database. After that, main only changes by merging a branch.
   - **Branches:**

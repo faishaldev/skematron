@@ -77,9 +77,11 @@ Status as of 2026-10-10: pre-alpha.
   - Each run creates a `skematron_shadow_<random>` database and always drops it. The role must not be a superuser.
   - Verification recreates the `from` version (plus the extensions it reports), runs the plan statement by statement, and requires the result to match `to`.
 - **Pages:**
-  - `/projects`, `/projects/[project]`
+  - Every signed-in page has the sidebar (`app/(app)/layout.tsx`): projects, the current project's sections, the organization's settings, and the account.
+  - `/projects`, `/projects/[project]` (overview: next step, counts, open branches, diagram of main)
+  - `/projects/[project]/{branches,versions,diagram,environments,settings}`: the project's sections. `diagram` takes `?version=` or `?branch=`.
   - `/projects/[project]/environments/{new,[environment]}`
-  - `/projects/[project]/versions/[n]`, with `export.sql` and `snapshot.json` downloads, and `schema.prisma` for Prisma imports
+  - `/projects/[project]/versions/[n]` (diagram, or `?view=tables`), with `export.sql` and `snapshot.json` downloads, and `schema.prisma` for Prisma imports
   - `/projects/[project]/versions/new`: import the baseline `schema.prisma`
   - `/projects/[project]/branches/new`, `/projects/[project]/branches/[name]` (changes, questions, test run, review, merge, rebase, close; `migration.sql` download)
   - `/projects/[project]/branches/[name]/edit` (schema editor) and `/projects/[project]/branches/[name]/upload` (`schema.prisma`)

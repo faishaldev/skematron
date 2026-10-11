@@ -1,42 +1,36 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
+import { listProjects } from "../../lib/projects.ts";
 import { can } from "../../lib/roles.ts";
 import { requireActor } from "../../lib/session.ts";
-import { signOutAction } from "../sign-out-action.ts";
+import { SidebarNav } from "../components/sidebar-nav.tsx";
 
-// Signed-in area. This layout only renders navigation: every page, action and route still
-// checks the actor and its permission itself.
+// Signed-in area: a sidebar and the page. This layout only renders navigation: every page,
+// action and route still checks the actor and its permission itself.
 export default async function AppLayout({ children }: { children: ReactNode }) {
   const actor = await requireActor();
+  const projects = await listProjects(actor);
   return (
-    <>
-      <header className="top">
+    <div className="shell">
+      <aside className="sidebar">
         <Link href="/projects" className="brand">
           <span className="brand-mark" aria-hidden>
             S
           </span>
           Skematron
         </Link>
-        <nav className="nav">
-          <Link href="/projects">Projects</Link>
-          {can(actor.role, "manage-members") && (
-            <Link href="/settings/members">Members</Link>
-          )}
-          {can(actor.role, "view-audit") && (
-            <Link href="/settings/audit">Audit log</Link>
-          )}
-        </nav>
-        <span className="spacer" />
-        <span className="tag">
-          {actor.name} <span className="badge neutral">{actor.role}</span>
-        </span>
-        <form action={signOutAction}>
-          <button type="submit" className="small">
-            Sign out
-          </button>
-        </form>
-      </header>
+        <SidebarNav
+          projects={projects.map((project) => ({
+            slug: project.slug,
+            name: project.name,
+          }))}
+          user={{ name: actor.name, role: actor.role }}
+          canManageProjects={can(actor.role, "manage-projects")}
+          canManageMembers={can(actor.role, "manage-members")}
+          canViewAudit={can(actor.role, "view-audit")}
+        />
+      </aside>
       <main>{children}</main>
-    </>
+    </div>
   );
 }

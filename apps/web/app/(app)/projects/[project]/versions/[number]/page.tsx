@@ -5,12 +5,14 @@ import { db } from "../../../../../../lib/db.ts";
 import { can } from "../../../../../../lib/roles.ts";
 import { resolveVersion } from "../../../../../../lib/version-pages.ts";
 import { loadSnapshot, unsupportedOf } from "../../../../../../lib/versions.ts";
+import { SchemaDiagram } from "../../../../../components/diagram.tsx";
 import { SchemaView } from "../../../../../components/schema-view.tsx";
 import {
   Breadcrumbs,
   Flash,
   formatDate,
   PageHeader,
+  param,
   Stat,
   type SearchParams,
 } from "../../../../../components/ui.tsx";
@@ -64,6 +66,8 @@ export default async function VersionPage({
     0,
   );
   const previous = version.number - 1;
+  const view =
+    param((await searchParams).view) === "tables" ? "tables" : "diagram";
 
   return (
     <>
@@ -71,6 +75,7 @@ export default async function VersionPage({
         items={[
           { label: "Projects", href: "/projects" },
           { label: project.name, href: base },
+          { label: "Main versions", href: `${base}/versions` },
           { label: `v${version.number}` },
         ]}
       />
@@ -104,7 +109,22 @@ export default async function VersionPage({
         <Stat label="Columns" value={columnCount} />
         <Stat label="Enums" value={enumCount} />
       </div>
-      <SchemaView snapshot={snapshot} unsupported={unsupportedOf(version)} />
+      <nav className="tabs" aria-label="View">
+        <Link href={here} className={view === "diagram" ? "active" : ""}>
+          Diagram
+        </Link>
+        <Link
+          href={`${here}?view=tables`}
+          className={view === "tables" ? "active" : ""}
+        >
+          Tables
+        </Link>
+      </nav>
+      {view === "diagram" ? (
+        <SchemaDiagram snapshot={snapshot} />
+      ) : (
+        <SchemaView snapshot={snapshot} unsupported={unsupportedOf(version)} />
+      )}
       <details className="card">
         <summary>Downloads and technical details</summary>
         <div className="toolbar" style={{ marginBottom: 12 }}>

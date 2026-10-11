@@ -7,6 +7,7 @@ import {
   branchPlan,
   branchStatusOf,
   getBranch,
+  headOf,
   testedRevision,
 } from "../../../../../../lib/branches.ts";
 import { db } from "../../../../../../lib/db.ts";
@@ -21,6 +22,10 @@ import { can } from "../../../../../../lib/roles.ts";
 import { requireActor } from "../../../../../../lib/session.ts";
 import { listVersions } from "../../../../../../lib/versions.ts";
 import { BranchBadge } from "../../../../../components/branch-status.tsx";
+import {
+  diagramHighlights,
+  SchemaDiagram,
+} from "../../../../../components/diagram.tsx";
 import { PlanView } from "../../../../../components/plan-view.tsx";
 import { QuestionField } from "../../../../../components/question-field.tsx";
 import {
@@ -465,7 +470,8 @@ export default async function BranchPage({
         items={[
           { label: "Projects", href: "/projects" },
           { label: project.name, href: base },
-          { label: `Branch ${branch.name}` },
+          { label: "Branches", href: `${base}/branches` },
+          { label: branch.name },
         ]}
       />
       <PageHeader
@@ -534,6 +540,29 @@ export default async function BranchPage({
         plan={plan}
         emptyMessage={`No changes yet: the branch is the same as ${from}.`}
       />
+
+      {changes > 0 && (
+        <>
+          <div className="section-head">
+            <div>
+              <h2>Diagram of this branch</h2>
+              <p className="hint">
+                New tables and columns are green, changed tables amber.
+              </p>
+            </div>
+            <Link
+              href={`${base}/diagram?branch=${branch.name}`}
+              className="button"
+            >
+              Full screen
+            </Link>
+          </div>
+          <SchemaDiagram
+            snapshot={headOf(branch)}
+            highlights={diagramHighlights(plan)}
+          />
+        </>
+      )}
 
       {!questionsFirst && plan.questions.length > 0 && (
         <details className="card" id="questions">
