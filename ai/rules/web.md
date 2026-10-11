@@ -70,6 +70,7 @@ Read before changing anything in `apps/web/`. These rules add to AGENTS.md and n
 
 - **Navigation lives in the sidebar** (`app/(app)/layout.tsx`, `components/sidebar-nav.tsx`):
   - At the top is a project switcher: a native `<details>` menu with the projects, "View all projects" and "New project". That is the only way to the list of projects.
+  - The list of projects (`/projects`) is a grid of cards. Creating a project is its own page, `/projects/new`, which every "New project" link opens.
   - Below it are the current project's sections, with icons from `components/icons.tsx`: Overview, Branches (with the number of open branches), Main versions, Diagram, Databases and Settings.
   - **The sections are always there.** Outside a project (the projects list, members, audit log), the sidebar shows the last project you opened, or else the first one.
     - The client sidebar remembers the last project in the `skematron_last_project` cookie, which holds only a slug.
@@ -85,7 +86,7 @@ Read before changing anything in `apps/web/`. These rules add to AGENTS.md and n
 - **Tell people what to do next.** Pages with a workflow (project, branch) show one `Callout` with the next step and its button. Empty lists use `Empty` and say how to fill them.
 - **Plain language first, SQL second.** Plans are shown with `PlanView`: one sentence per change (`describeOperation`), its risk and warnings, and the SQL behind a `<details>`. Technical steps (sequences, temporary defaults) are folded away. Checksums, history and downloads go into `<details>` too.
 - **Words people use:** "test run", not "shadow check"; "database", not "environment", in headings; "Deletes data", not "destructive", in badges. Keep stored values and audit actions unchanged.
-- Style with the classes in `app/globals.css` (`button`/`.button`, `.primary`, `.card`, `.card.flush`, `.callout`, `label.option`, `.accordion`). Both light and dark mode must work.
+- Style with the classes in `app/globals.css` (`button`/`.button`, `.primary`, `.card`, `.card.flush`, `.callout`, `label.option`, `.accordion`, `.narrow-page` for a page that is a single form). Both light and dark mode must work.
 
 ## Code conventions
 

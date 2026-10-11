@@ -125,7 +125,7 @@ function ProjectSwitcher({
           View all projects
         </Link>
         {canManageProjects && (
-          <Link href="/projects#new-project" role="menuitem">
+          <Link href="/projects/new" role="menuitem">
             <Icon name="plus" />
             New project
           </Link>
@@ -252,7 +252,7 @@ export function SidebarNav({
           </p>
           {canManageProjects && (
             <Item
-              href="/projects#new-project"
+              href="/projects/new"
               label="New project"
               icon="plus"
               active={false}

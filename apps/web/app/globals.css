@@ -878,19 +878,22 @@ legend {
 
 .project-cards {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
-  gap: 12px;
-  margin: 12px 0;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  gap: 14px;
+  margin: 8px 0;
 }
 
 a.project-card {
-  display: block;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
   color: var(--text);
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--radius);
   box-shadow: var(--shadow);
-  padding: 16px 18px;
+  padding: 18px;
+  transition: border-color 0.15s;
 }
 
 a.project-card:hover {
@@ -898,9 +901,56 @@ a.project-card:hover {
   text-decoration: none;
 }
 
-a.project-card h3 {
-  margin: 0 0 6px;
+.project-card-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.project-card-head .switcher-mark {
+  width: 36px;
+  height: 36px;
   font-size: 16px;
+  border-radius: 9px;
+}
+
+.project-card-title {
+  display: grid;
+  min-width: 0;
+}
+
+.project-card-title h3 {
+  margin: 0;
+  font-size: 16px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.project-card-stats {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+  margin: 0;
+  padding-top: 14px;
+  border-top: 1px solid var(--border);
+}
+
+.project-card-stats dt {
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.project-card-stats dd {
+  margin: 2px 0 0;
+  font-size: 17px;
+  font-weight: 650;
+}
+
+/* A page whose content is one form: centered, at a readable width. */
+.narrow-page {
+  max-width: 640px;
+  margin: 0 auto;
 }
 
 /* ---- App shell: sidebar and page ---- */

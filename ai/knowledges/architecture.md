@@ -78,7 +78,7 @@ Status as of 2026-10-10: pre-alpha.
   - Verification recreates the `from` version (plus the extensions it reports), runs the plan statement by statement, and requires the result to match `to`.
 - **Pages:**
   - Every signed-in page has the sidebar (`app/(app)/layout.tsx`): a project switcher (with the list of all projects), the current project's sections (the last project opened when the page is outside a project), the workspace (members, audit log), and the account.
-  - `/projects`, `/projects/[project]` (overview: next step, counts, open branches, diagram of main)
+  - `/projects` (project cards), `/projects/new` (create a project and choose its schema source), `/projects/[project]` (overview: next step, counts, open branches, diagram of main)
   - `/projects/[project]/{branches,versions,diagram,environments,settings}`: the project's sections. `diagram` takes `?version=` or `?branch=`.
   - `/projects/[project]/environments/{new,[environment]}`
   - `/projects/[project]/versions/[n]` (diagram, or `?view=tables`), with `export.sql` and `snapshot.json` downloads, and `schema.prisma` for Prisma imports

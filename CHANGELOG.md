@@ -119,7 +119,8 @@ All notable changes to Skematron are recorded here. The format follows [Keep a C
   - **Schema editor:** your changes and the schema are on the left, and the "Add a table / column / foreign key / index" forms in a side panel.
   - **Versions:** a summary of tables, columns and enums. Columns read as type, required and default. Keys, links and indexes are shown as labels. Sequences, checksums and downloads are folded away.
   - **Other pages:**
-    - Projects are listed as cards. New projects choose their schema source from two described options.
+    - Projects are listed as cards that fill the page, each with its schema source, its latest version on main, and its open branches and databases.
+    - A new project is created on its own page (`/projects/new`, from "New project" on the list or in the project switcher), choosing its schema source from two described options.
     - Sign-in, setup and invitations are a centered card.
     - Light and dark mode are both polished.
 

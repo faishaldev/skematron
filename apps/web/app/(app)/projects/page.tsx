@@ -2,6 +2,7 @@ import Link from "next/link";
 import { listProjects, schemaSourceOf } from "../../../lib/projects.ts";
 import { can } from "../../../lib/roles.ts";
 import { requireActor } from "../../../lib/session.ts";
+import { Icon } from "../../components/icons.tsx";
 import {
   Empty,
   Flash,
@@ -9,7 +10,6 @@ import {
   plural,
   type SearchParams,
 } from "../../components/ui.tsx";
-import { createProjectAction } from "./actions.ts";
 
 export const dynamic = "force-dynamic";
 
@@ -20,96 +20,72 @@ export default async function ProjectsPage({
 }) {
   const actor = await requireActor();
   const projects = await listProjects(actor);
-  const canCreate = can(actor.role, "manage-projects");
+  const newProject = can(actor.role, "manage-projects") ? (
+    <Link href="/projects/new" className="button primary">
+      <Icon name="plus" />
+      New project
+    </Link>
+  ) : undefined;
   return (
     <>
       <PageHeader
         title="Projects"
-        subtitle="A project tracks one application's database schema: the agreed versions on main, the branches that change it, and the databases it runs on."
+        subtitle={
+          projects.length === 0
+            ? "A project tracks one application's database schema."
+            : `${plural(projects.length, "project")}. Each tracks one application's database schema: the agreed versions on main, the branches that change it, and the databases it runs on.`
+        }
+        actions={newProject}
       />
       <Flash searchParams={searchParams} />
       {projects.length === 0 ? (
-        <Empty title="No projects yet">
+        <Empty title="No projects yet" actions={newProject}>
           <p>
-            {canCreate
-              ? "Create your first project below."
-              : "Ask an admin to create one."}
+            {newProject === undefined
+              ? "Ask an admin to create one."
+              : "Create a project for the first application whose database schema you want to manage."}
           </p>
         </Empty>
       ) : (
         <div className="project-cards">
-          {projects.map((project) => (
-            <Link
-              key={project.id}
-              href={`/projects/${project.slug}`}
-              className="project-card"
-            >
-              <h3>{project.name}</h3>
-              <p className="hint">
-                {schemaSourceOf(project) === "dashboard"
-                  ? "Schema written in Skematron"
-                  : "Schema written in code"}
-              </p>
-              <p className="small muted">
-                {plural(project._count.versions, "version")} ·{" "}
-                {plural(
-                  project._count.branches,
-                  "open branch",
-                  "open branches",
-                )}{" "}
-                · {plural(project._count.environments, "database")}
-              </p>
-            </Link>
-          ))}
-        </div>
-      )}
-      {canCreate && (
-        <div className="card" id="new-project" style={{ maxWidth: 640 }}>
-          <h3>New project</h3>
-          <form action={createProjectAction} className="stack">
-            <label>
-              Name
-              <input
-                name="name"
-                placeholder="e.g. Billing API"
-                required
-                maxLength={80}
-              />
-            </label>
-            <fieldset>
-              <legend>Where is the schema written?</legend>
-              <label className="option">
-                <input
-                  type="radio"
-                  name="schemaSource"
-                  value="code"
-                  defaultChecked
-                />
-                <span>
-                  <strong>In code</strong>
-                  <span className="hint">
-                    Your team edits a schema.prisma (or the database itself) and
-                    imports each change into Skematron.
+          {projects.map((project) => {
+            const versions = project._count.versions;
+            return (
+              <Link
+                key={project.id}
+                href={`/projects/${project.slug}`}
+                className="project-card"
+              >
+                <div className="project-card-head">
+                  <span className="switcher-mark" aria-hidden>
+                    {project.name.charAt(0).toUpperCase()}
                   </span>
-                </span>
-              </label>
-              <label className="option">
-                <input type="radio" name="schemaSource" value="dashboard" />
-                <span>
-                  <strong>In Skematron</strong>
-                  <span className="hint">
-                    Your team adds tables and columns in Skematron&apos;s schema
-                    editor. No ORM needed.
-                  </span>
-                </span>
-              </label>
-            </fieldset>
-            <div>
-              <button type="submit" className="primary">
-                Create project
-              </button>
-            </div>
-          </form>
+                  <div className="project-card-title">
+                    <h3>{project.name}</h3>
+                    <span className="hint">
+                      {schemaSourceOf(project) === "dashboard"
+                        ? "Schema written in Skematron"
+                        : "Schema written in code"}
+                    </span>
+                  </div>
+                </div>
+                <dl className="project-card-stats">
+                  <div>
+                    <dt>Main</dt>
+                    <dd>{versions === 0 ? "—" : `v${versions}`}</dd>
+                  </div>
+                  <div>
+                    <dt>Open branches</dt>
+                    <dd>{project._count.branches}</dd>
+                  </div>
+                  <div>
+                    <dt>Databases</dt>
+                    <dd>{project._count.environments}</dd>
+                  </div>
+                </dl>
+              </Link>
+            );
+          })}
         </div>
       )}
     </>
