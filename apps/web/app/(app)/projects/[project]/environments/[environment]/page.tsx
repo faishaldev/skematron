@@ -6,8 +6,10 @@ import { can } from "../../../../../../lib/roles.ts";
 import { requireActor } from "../../../../../../lib/session.ts";
 import { listVersions } from "../../../../../../lib/versions.ts";
 import {
+  Breadcrumbs,
   Flash,
   formatDate,
+  PageHeader,
   type SearchParams,
 } from "../../../../../components/ui.tsx";
 import {
@@ -48,15 +50,23 @@ export default async function EnvironmentPage({
 
   return (
     <>
-      <p>
-        <Link href={base}>← {project.name}</Link>
-      </p>
-      <h1>Environment {environment.name}</h1>
-      <p className="muted">
-        <code>{environment.connectionHint}</code> · schemas{" "}
-        {environment.namespaces.join(", ")} · updated{" "}
-        {formatDate(environment.updatedAt)}
-      </p>
+      <Breadcrumbs
+        items={[
+          { label: "Projects", href: "/projects" },
+          { label: project.name, href: base },
+          { label: environment.name },
+        ]}
+      />
+      <PageHeader
+        title={`Database: ${environment.name}`}
+        subtitle={
+          <>
+            <code>{environment.connectionHint}</code> · tracks{" "}
+            {environment.namespaces.join(", ")} · updated{" "}
+            {formatDate(environment.updatedAt)}
+          </>
+        }
+      />
       <Flash searchParams={searchParams} />
 
       {can(actor.role, "use-databases") && (
@@ -76,13 +86,17 @@ export default async function EnvironmentPage({
             {latest !== undefined && (
               <Link
                 href={`${base}/compare?from=${latest.number}&environment=${environment.name}`}
+                className="button"
               >
                 Check drift against v{latest.number}
               </Link>
             )}
           </div>
-          <p className="hint">
-            All three only read the schema, in a read-only transaction.
+          <p className="hint" style={{ marginTop: 10 }}>
+            Import version saves this database&apos;s current schema as a new
+            version. Check drift shows how it differs from the latest version.
+            All of them only read the schema; Skematron never writes to this
+            database.
           </p>
         </div>
       )}
@@ -122,7 +136,9 @@ export default async function EnvironmentPage({
                 defaultValue={environment.namespaces.join(", ")}
               />
             </label>
-            <button type="submit">Save</button>
+            <div>
+              <button type="submit">Save</button>
+            </div>
           </form>
           <form action={deleteEnvironmentAction} className="inline">
             {hidden}

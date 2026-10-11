@@ -8,6 +8,7 @@ export {
 } from "./introspect.ts";
 export { quoteIdent, quoteLiteral, quoteQualified } from "./quote.ts";
 export {
+  renderIndexDefinition,
   renderPostgresMigration,
   type RenderedMigration,
   type RenderedStatement,

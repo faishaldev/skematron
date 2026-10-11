@@ -41,6 +41,9 @@ Things that surprised someone or cost time, and what to do about them. Add new o
 - **Page HTML contains every string twice**: once in the markup and once in the embedded React Server Components payload. Halve counts when grepping HTML in tests.
 - **`redirect()` throws, so catching it breaks it.** Server actions wrap their work in `runAction()`, which calls `unstable_rethrow` first in its `catch`. Without that, the redirects from `requireActor()` (to `/sign-in`) would be shown as errors.
 - **React splits text around values.** `{n} operations` renders as `19<!-- --> operations`. Strip `<!-- -->` before matching page text.
+- **`next build` can run next to a running `next dev`.** Next 16 keeps dev output in `.next/dev`. To click through a flow without touching the dev database, build, then run `next start --port 3101` with `SKEMATRON_DATABASE_URL`, `SKEMATRON_ARTIFACT_DIR` and `BETTER_AUTH_URL` pointing at scratch values. Already-set variables win over `.env`.
+- **A form's submit button travels with the form.** React passes the clicked button's `name` and `value` to the server action, which is how the review form sends `verdict`. When posting with curl, set that field yourself.
+- **Server actions accept bodies up to 1 MB by default** (`serverActions.bodySizeLimit`). The Prisma upload limit (512 KB) stays below it.
 
 ## Prisma and Better Auth
 
@@ -56,9 +59,18 @@ Things that surprised someone or cost time, and what to do about them. Add new o
   - They enforce Better Auth's permissions, but they skip the app's audit log.
   - The owner role leaves out organization delete, and users cannot create organizations, so the risky endpoints are closed.
   - Keep that in mind whenever you change roles.
+- **A running `next dev` keeps its Prisma client across hot reloads** (on `globalThis`). After a metadata schema change, a client built from the old generated code has no delegates for the new models ("Cannot read properties of undefined (reading 'findMany')"). `lib/db.ts` now rebuilds the client when the generated `PrismaClient` class changes. `instanceof` cannot be used for that, because it is always false for Prisma 7 clients. New `.env` variables still need a restart of `pnpm web`.
+- **`prisma migrate dev` does not regenerate the client in Prisma 7.** After `pnpm db:migrate`, run `pnpm db:generate`, or the new models are missing from the types.
+- **Prisma 7's `migrate diff` needs a config with a datasource URL, even offline.** Without one, it fails with an empty "Error in Schema engine:"; the debug log (`DEBUG="prisma*"`) shows the engine's missing `--datasource` argument. `--from-empty --to-schema` never connects, so `lib/prisma-import.ts` writes a config that points at port 1 on loopback.
+- **Prisma 7 rejects `url`, `directUrl` and `shadowDatabaseUrl` in schema files** (error P1012). Prisma 5 and 6 schemas have them, so `preparePrismaSchema` blanks those lines.
+- **Do not drop a schema's generator blocks.** They carry `previewFeatures`; without them, `extensions = [...]` and `view` blocks fail to validate. `migrate diff` never runs generators.
+- **`migrate diff --to-schema` needs a real file;** `/dev/stdin` is rejected. The SQL goes to stdout, and messages such as "Loaded Prisma config" go to stderr.
 - **The WHATWG URL parser re-encodes passwords.** A `:` inside a password becomes `%3A`, which decodes to the same password. Compare decoded values.
 
 ## Safety
 
 - **Rendered SQL contains raw fragments** from the snapshot: types, defaults, expressions, index definitions. Review it before executing. Never execute a plan built from a snapshot you did not produce or review.
+- **PostgreSQL reprints what you type.** `int` becomes `integer`, `varchar(40)` becomes `character varying(40)`, `numeric(10, 2)` becomes `numeric(10,2)`, and index definitions come back in `pg_get_indexdef` form, quoted only where needed. A snapshot built from typed input would therefore never match an introspected one. The editor normalizes every draft through the shadow database.
+- **Every new database has a `public` schema.** Shadow-database results ignore an empty `public` (unless the target version has one), so a Prisma import or a verification does not report a phantom namespace.
+- **Shadow verification proves the plan against an empty copy of `from`,** not against real rows. A backfill value of the wrong type fails there (constants are cast when the statement runs), but duplicates or NULLs in real data can still make a statement fail. Views, triggers and other uncaptured objects are missing too.
 - **Text in SQL comments** must go through `commentText`. A newline in an object name would otherwise end the `--` comment and turn the rest into SQL.

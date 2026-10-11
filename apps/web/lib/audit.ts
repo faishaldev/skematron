@@ -10,10 +10,16 @@ export type AuditAction =
   | "member.role_change"
   | "member.remove"
   | "project.create"
+  | "project.update"
   | "environment.create"
   | "environment.update"
   | "environment.delete"
-  | "version.import";
+  | "version.import"
+  | "migration.create"
+  | "migration.revise"
+  | "migration.submit"
+  | "migration.approve"
+  | "migration.reject";
 
 export interface AuditEventInput {
   organizationId: string;

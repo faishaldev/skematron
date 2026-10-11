@@ -6,7 +6,8 @@ Status: pre-alpha. This describes running the dashboard (`apps/web`) for one tea
 
 - Node.js 24 and pnpm 10.
 - PostgreSQL 14 or newer for Skematron's **metadata database**. Use a dedicated database: never one of the application databases you want to manage.
-- A persistent directory for **artifacts**: schema snapshots, about a few kilobytes per version.
+- A persistent directory for **artifacts**: schema snapshots, Prisma schema files, and migration plans and scripts, a few kilobytes each.
+- A separate, disposable PostgreSQL 14+ server for **shadow databases**, if you want Prisma schema import and migration checks (see below).
 - TLS in front of the app (a reverse proxy such as Caddy or nginx). Never expose the dashboard over plain HTTP.
 
 ## Configuration
@@ -20,6 +21,7 @@ Set these environment variables for the app process, for example in a git-ignore
 | `BETTER_AUTH_SECRET` | yes | Signs sessions. Generate it with `openssl rand -base64 32`. |
 | `BETTER_AUTH_URL` | yes | The public URL of the dashboard, e.g. `https://skematron.example.com`. Also used in invitation links. |
 | `SKEMATRON_ARTIFACT_DIR` | in production | Directory for artifacts, e.g. `/var/lib/skematron/artifacts`. |
+| `SKEMATRON_SHADOW_DATABASE_URL` | for migrations | The shadow server's maintenance database, e.g. `postgresql://skematron_shadow:…@shadow:5432/postgres`. Without it, Prisma import and the schema editor are unavailable, and migration checks are recorded as "unavailable", which blocks submitting migrations. |
 
 ## Install and run
 
@@ -41,12 +43,28 @@ pnpm --filter @skematron/web start
 - Give it a database user with the least privileges possible. Read access to the system catalogs is enough.
 - Connection URLs are stored encrypted with `SKEMATRON_SECRET_KEY`. After saving, only a redacted form (without the password) is shown.
 
+## The shadow database server
+
+Skematron runs SQL that comes from users (Prisma's DDL, schema editor drafts, migration plans) to check what it really does. It does this only in temporary databases on a server you dedicate to it, never on the databases you manage and never on the metadata database.
+
+- **Use a separate PostgreSQL 14+ server or container that holds nothing else.** It needs no backups or persistent volume.
+- **Create a role that can create databases and is not a superuser.** Skematron refuses a superuser role.
+
+  ```sql
+  CREATE ROLE skematron_shadow LOGIN PASSWORD '…' CREATEDB NOSUPERUSER NOCREATEROLE;
+  ```
+
+- **Point `SKEMATRON_SHADOW_DATABASE_URL` at that server's `postgres` database** with this role.
+- **What happens in it:** each Prisma import and each migration revision creates a `skematron_shadow_<random>` database, works in it with statement timeouts, and drops it again. If the app is killed mid-run, a leftover `skematron_shadow_*` database can be dropped by hand.
+- **Extensions:** a check recreates the extensions the starting version reports, such as `citext` or `pgcrypto`, so they must be installable on the shadow server. As a non-superuser role, it can create only trusted extensions.
+- **The Prisma CLI** (installed with the app) turns `schema.prisma` files into SQL. It runs in a temporary directory, without access to Skematron's secrets, and never connects to a database.
+
 ## Backups
 
 **Back up these three together.** Each is incomplete without the others:
 
 1. **The metadata database** (`pg_dump` of `SKEMATRON_DATABASE_URL`).
-2. **The artifact directory** (`SKEMATRON_ARTIFACT_DIR`). Versions point to artifacts by checksum.
+2. **The artifact directory** (`SKEMATRON_ARTIFACT_DIR`). Versions and migration revisions point to artifacts by checksum.
 3. **`SKEMATRON_SECRET_KEY`.** Without it, stored connection URLs cannot be decrypted, and must be entered again.
 
 **To restore:** restore the database and the artifact directory, then set the same `SKEMATRON_SECRET_KEY`. Every artifact is verified against its checksum when it is read, so a missing or damaged file is reported, never silently served.
@@ -67,4 +85,4 @@ Rolling back after a metadata migration is not guaranteed to be safe. Restore fr
 - SSO/OAuth.
 - Multiple organizations.
 - The CLI.
-- Applying migrations.
+- Applying migrations to environments. Migrations can be created, checked and approved, and their SQL downloaded, but Skematron does not run them yet.

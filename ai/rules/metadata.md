@@ -29,5 +29,6 @@ Read before changing `prisma/`, `prisma.config.ts`, or any Prisma query. These r
 
 - Scope every query to the actor's organization (see `ai/rules/web.md`).
 - **Use transactions and locks where correctness depends on order.** Version numbering, for example, takes a per-project advisory lock. Unique constraints are the safety net.
-- **Versions and audit events are append-only.** No update or delete paths.
+- **Versions, migration revisions, migration reviews and audit events are append-only.** No update or delete paths. On `migration`, only `status` (and `updatedAt`) change.
+- **`schema_draft` is working state, not history.** Rows are updated on every edit and deleted when saved or discarded. Never point anything durable at a draft.
 - **Backups:** back up the metadata database, the artifact directory (`SKEMATRON_ARTIFACT_DIR`) and `SKEMATRON_SECRET_KEY` together (see `docs/self-hosting.md`).

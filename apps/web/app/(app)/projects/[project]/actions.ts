@@ -1,11 +1,18 @@
 "use server";
 
 import { field, runAction, withFlash } from "../../../../lib/actions.ts";
+import { UserFacingError } from "../../../../lib/errors.ts";
+import {
+  importPrismaSchema,
+  MAX_PRISMA_SCHEMA_BYTES,
+} from "../../../../lib/prisma-import.ts";
 import {
   createEnvironment,
   deleteEnvironment,
   getEnvironment,
   getProject,
+  parseSchemaSource,
+  setSchemaSource,
   updateEnvironment,
   type EnvironmentInput,
 } from "../../../../lib/projects.ts";
@@ -134,5 +141,58 @@ export async function importVersionAction(formData: FormData): Promise<void> {
           "notice",
           `No changes: ${name} still matches version ${result.number}, so no new version was created.`,
         );
+  });
+}
+
+export async function importPrismaSchemaAction(
+  formData: FormData,
+): Promise<void> {
+  const slug = field(formData, "project");
+  await runAction(`${projectPath(slug)}/versions/new`, async () => {
+    const actor = await requirePermission("author-migrations");
+    const project = await getProject(actor, slug);
+    const file = formData.get("schemaFile");
+    let text = field(formData, "schemaText");
+    if (file instanceof File && file.size > 0) {
+      if (file.size > MAX_PRISMA_SCHEMA_BYTES) {
+        throw new UserFacingError(
+          `The file is larger than ${MAX_PRISMA_SCHEMA_BYTES / 1024} KB.`,
+        );
+      }
+      text = await file.text();
+    }
+    const result = await importPrismaSchema(actor, project, text);
+    const removed =
+      result.removed.length === 0
+        ? ""
+        : ` Removed from the stored file: ${result.removed.join(", ")}.`;
+    return result.status === "created"
+      ? withFlash(
+          `${projectPath(slug)}/versions/${result.number}`,
+          "notice",
+          `Imported version ${result.number} from schema.prisma.${removed}`,
+        )
+      : withFlash(
+          projectPath(slug),
+          "notice",
+          `No changes: the schema still matches version ${result.number}, so no new version was created.`,
+        );
+  });
+}
+
+export async function setSchemaSourceAction(formData: FormData): Promise<void> {
+  const slug = field(formData, "project");
+  await runAction(projectPath(slug), async () => {
+    const actor = await requirePermission("manage-projects");
+    const project = await getProject(actor, slug);
+    const source = parseSchemaSource(field(formData, "schemaSource"));
+    await setSchemaSource(actor, project, source);
+    return withFlash(
+      projectPath(slug),
+      "notice",
+      source === "dashboard"
+        ? "The schema is now written in the dashboard: use Edit schema."
+        : "The schema is now written in code: import versions from a schema.prisma or an environment.",
+    );
   });
 }

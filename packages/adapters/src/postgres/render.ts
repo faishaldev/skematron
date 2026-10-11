@@ -53,6 +53,23 @@ export function renderPostgresMigration(
   return { statements, script: renderScript(plan, statements) };
 }
 
+/**
+ * The definition of a new B-tree index on plain columns, for snapshots edited by hand.
+ * PostgreSQL prints definitions in its own style (`pg_get_indexdef`); run the result
+ * through a real database and introspect it to get the stored form.
+ */
+export function renderIndexDefinition(input: {
+  namespace: string;
+  tableName: string;
+  name: string;
+  columns: readonly string[];
+  unique: boolean;
+}): string {
+  if (input.columns.length === 0)
+    throw new Error("An index needs at least one column.");
+  return `CREATE ${input.unique ? "UNIQUE " : ""}INDEX ${quoteIdent(input.name)} ON ${quoteQualified(input.namespace, input.tableName)} USING btree (${columnList(input.columns)})`;
+}
+
 function renderScript(
   plan: MigrationPlan,
   statements: RenderedStatement[],
@@ -64,6 +81,13 @@ function renderScript(
     "-- Review every statement before applying it.",
     `-- Operations: ${statements.length} (${count("destructive")} destructive, ${count("caution")} caution, ${count("safe")} safe)`,
   ];
+  const open = plan.questions.filter((question) => question.answer === null);
+  if (open.length > 0) {
+    lines.push(
+      "--",
+      `-- OPEN QUESTIONS: ${open.length}. Answer them before applying; the answers can change this plan.`,
+    );
+  }
   if (plan.unsupported.length > 0) {
     lines.push(
       "--",
@@ -101,6 +125,12 @@ function summarize(sql: string): string {
 function renderOperation(operation: Operation): string {
   const { namespace } = operation;
   switch (operation.kind) {
+    case "rename-table":
+      return `ALTER TABLE ${quoteQualified(namespace, operation.tableName)} RENAME TO ${quoteIdent(operation.newName)}`;
+    case "rename-column":
+      return `${alterTable(namespace, operation.tableName)} RENAME COLUMN ${quoteIdent(operation.columnName)} TO ${quoteIdent(operation.newName)}`;
+    case "rename-sequence":
+      return `ALTER SEQUENCE ${quoteQualified(namespace, operation.sequenceName)} RENAME TO ${quoteIdent(operation.newName)}`;
     case "create-namespace":
       return `CREATE SCHEMA IF NOT EXISTS ${quoteIdent(namespace)}`;
     case "drop-namespace":
@@ -140,8 +170,17 @@ function renderOperation(operation: Operation): string {
       return createTable(namespace, operation.table);
     case "drop-table":
       return `DROP TABLE ${quoteQualified(namespace, operation.tableName)}`;
-    case "add-column":
-      return `${alterTable(namespace, operation.tableName)} ADD COLUMN ${columnDefinition(operation.column)}`;
+    case "add-column": {
+      // A backfill fills existing rows through a temporary default; the planner drops it later.
+      const column =
+        operation.backfill === undefined
+          ? operation.column
+          : {
+              ...operation.column,
+              default: `${quoteLiteral(operation.backfill)}::${operation.column.type}`,
+            };
+      return `${alterTable(namespace, operation.tableName)} ADD COLUMN ${columnDefinition(column)}`;
+    }
     case "drop-column":
       return `${alterTable(namespace, operation.tableName)} DROP COLUMN ${quoteIdent(operation.columnName)}`;
     case "alter-column-type": {

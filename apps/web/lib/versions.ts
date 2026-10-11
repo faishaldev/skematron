@@ -11,7 +11,7 @@ import type { Actor } from "./actor.ts";
 import { recordAudit } from "./audit.ts";
 import { db } from "./db.ts";
 import { artifactDirectory } from "./env.ts";
-import { NotFoundError } from "./errors.ts";
+import { NotFoundError, UserFacingError } from "./errors.ts";
 import { assertCan, type Environment, type Project } from "./projects.ts";
 import { readLive } from "./targets.ts";
 
@@ -45,6 +45,8 @@ export async function importVersion(
 /**
  * Stores a snapshot as the project's next version, unless it is identical to the latest one.
  * A per-project advisory lock keeps numbering sequential and the identity check race-free.
+ * With `basedOn`, the latest version must still be that one (null: no version yet), so an
+ * edited copy of an older version never silently replaces newer changes.
  */
 export async function recordVersion(
   actor: Actor,
@@ -53,6 +55,7 @@ export async function recordVersion(
     snapshot: SchemaSnapshot;
     unsupported: UnsupportedObject[];
     source: Record<string, string>;
+    basedOn?: { versionId: string | null };
   },
 ): Promise<ImportResult> {
   const text = serializeSnapshot(input.snapshot);
@@ -68,6 +71,14 @@ export async function recordVersion(
       where: { projectId: project.id },
       orderBy: { number: "desc" },
     });
+    if (
+      input.basedOn !== undefined &&
+      (latest?.id ?? null) !== input.basedOn.versionId
+    ) {
+      throw new UserFacingError(
+        `Version ${latest?.number} was saved after this draft started. Discard the draft and start again from v${latest?.number}.`,
+      );
+    }
     if (latest?.checksum === checksum) {
       return { status: "unchanged", number: latest.number } as const;
     }
@@ -101,6 +112,7 @@ export async function recordVersion(
         project: project.slug,
         number: result.number,
         checksum,
+        source: input.source.kind ?? null,
         environment: input.source.environmentName ?? null,
       },
     });

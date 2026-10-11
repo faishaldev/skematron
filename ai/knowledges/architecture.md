@@ -2,15 +2,15 @@
 
 Status as of 2026-10-10: pre-alpha.
 
-- **What exists:** two libraries, an artifact store, and the first dashboard (single-organization mode).
-- **Not built yet:** the CLI, deployment packaging, and an apply step.
+- **What exists:** two libraries, an artifact store, and the dashboard (single-organization mode) with versions, Prisma schema import, and migrations that are planned with guided questions, checked in a shadow database and reviewed by a second person.
+- **Not built yet:** applying migrations to environments (Phase 1b), the CLI, and deployment packaging.
 
 ## Packages and apps
 
 | Package | Path | Purpose | May import |
 | --- | --- | --- | --- |
-| `@skematron/core` | `packages/core` | Snapshot model, canonical form and checksum, migration planning. Pure and deterministic. | Only its own modules |
-| `@skematron/adapters` | `packages/adapters` | Database adapters. Today: PostgreSQL introspection and SQL rendering. | Its own modules and `@skematron/core` |
+| `@skematron/core` | `packages/core` | Snapshot model, canonical form and checksum, schema editing, migration planning. Pure and deterministic. | Only its own modules |
+| `@skematron/adapters` | `packages/adapters` | Database adapter: PostgreSQL introspection and SQL rendering (`postgres/`). Schema-tool adapter: Prisma Schema preparation (`prisma/`). The two never import each other. | Its own modules and `@skematron/core` |
 | `@skematron/storage` | `packages/storage` | Content-addressed, checksum-verified artifact files (key = `sha256:<hex>`). | Node built-ins and its own modules |
 | `@skematron/web` | `apps/web` | The dashboard: Next.js 16, Better Auth, Prisma 7 against the metadata database. | Everything above, plus `pg`, Next.js, React, Better Auth, Prisma |
 
@@ -27,6 +27,9 @@ Status as of 2026-10-10: pre-alpha.
   | --- | --- | --- | --- | --- |
   | View projects, versions, compare, export | ✓ | ✓ | ✓ | ✓ |
   | Import versions, test connections, check drift | | ✓ | ✓ | ✓ |
+  | Import `schema.prisma`; edit the schema in the dashboard; create, answer and submit migrations | | ✓ | ✓ | ✓ |
+  | Change a project's schema source | | | ✓ | ✓ |
+  | Approve or reject migrations (never ones they wrote) | | | ✓ | ✓ |
   | Create and edit projects and environments | | | ✓ | ✓ |
   | Invite members, change roles, remove members, view the audit log | | | ✓ | ✓ |
 
@@ -37,10 +40,43 @@ Status as of 2026-10-10: pre-alpha.
     - The snapshot is stored as an artifact.
     - A `schema_version` row is added, numbered per project under an advisory lock.
     - An import identical to the latest version creates nothing.
+  - A `schema.prisma` import (`lib/prisma-import.ts`) makes a version too:
+    - `preparePrismaSchema` removes connection URLs.
+    - The Prisma CLI (`migrate diff --from-empty`) produces DDL, which runs in a shadow database.
+    - Introspecting the shadow database gives the snapshot. The prepared schema file is stored as an artifact (`source.schemaChecksum`).
+- **Schema source** (`project.schemaSource`):
+  - "code": versions come from a `schema.prisma` upload or an environment import.
+  - "dashboard": versions come from the schema editor.
+
+  Prisma import works only for "code", and the editor only for "dashboard". Environment imports work for both.
+- **The schema editor** (`lib/schema-drafts.ts`, `/projects/[project]/schema`):
+  - Each person has a private **draft** per project (`schema_draft`), started from the latest version.
+  - Each edit is applied with core's edit functions (`edit.ts`). The whole draft is then rebuilt in a shadow database and introspected (`normalizeSnapshot`), so it holds what PostgreSQL really creates.
+  - Typed fragments are first checked by `lib/schema-input.ts`.
+  - Saving records the draft through `recordVersion` with `basedOn`. Under the version lock, it is refused when another version was saved since the draft started. The draft is then deleted.
+- **Migrations** (`lib/migrations.ts`) go from one version to another, numbered per project (M1, M2, …):
+  - **Content lives in immutable revisions.** Each revision stores:
+    - the answers
+    - the plan JSON and the SQL script, as artifacts
+    - a risk summary
+    - counts of open questions and unsupported changes
+    - the shadow verification result: `passed`, `failed` or `unavailable`
+  - **Status:** draft → in_review → approved or rejected. A new revision always returns the migration to draft.
+  - **Submit** needs no open questions, no unsupported changes, and a passed verification.
+  - **Review:**
+    - Only an admin or owner who wrote neither the migration nor the revision may approve or reject.
+    - Approving destructive operations needs an explicit acknowledgment. Rejecting needs a comment.
+    - The reviewer approves the exact revision they saw.
+- **The shadow database** (`lib/shadow.ts`, `SKEMATRON_SHADOW_DATABASE_URL`) is a dedicated, disposable server:
+  - Each run creates a `skematron_shadow_<random>` database and always drops it. The role must not be a superuser.
+  - Verification recreates the `from` version (plus the extensions it reports), runs the plan statement by statement, and requires the result to match `to`.
 - **Pages:**
   - `/projects`, `/projects/[project]`
   - `/projects/[project]/environments/{new,[environment]}`
-  - `/projects/[project]/versions/[n]`, with `export.sql` and `snapshot.json` downloads
+  - `/projects/[project]/versions/[n]`, with `export.sql` and `snapshot.json` downloads, and `schema.prisma` for Prisma imports
+  - `/projects/[project]/versions/new`: import a `schema.prisma`
+  - `/projects/[project]/schema`: the schema editor
+  - `/projects/[project]/migrations/new`, `/projects/[project]/migrations/[n]` (with a `migration.sql` download)
   - `/projects/[project]/compare?from=&to=` between two versions, or `?from=&environment=` for drift
   - `/settings/members`, `/settings/audit`
 - **Server modules (`apps/web/lib`):**
@@ -49,7 +85,11 @@ Status as of 2026-10-10: pre-alpha.
   - `membership.ts`: the sign-up gate and invitations
   - `members.ts`
   - `projects.ts`: projects and environments
-  - `targets.ts`: the only module that decrypts and connects
+  - `targets.ts`: the only module that decrypts environment URLs and connects to user databases (read-only)
+  - `shadow.ts`: temporary databases on the shadow server, `snapshotFromDdl`, `verifyMigration`
+  - `prisma-import.ts`: runs the Prisma CLI in a temporary directory with a minimal environment
+  - `migrations.ts`: the migration workflow and review rules
+  - `schema-drafts.ts`: the editor's drafts; `schema-input.ts`: checks for typed names, types and defaults
   - `versions.ts`
   - `audit.ts`
   - `secrets.ts`, `connections.ts`, `roles.ts`, `slugs.ts`
@@ -61,25 +101,29 @@ Status as of 2026-10-10: pre-alpha.
 - **What it is:** PostgreSQL with Prisma 7. The schema is `prisma/schema.prisma`, migrations are in `prisma/migrations`, and the config is `prisma.config.ts`. The generated client goes to `apps/web/generated/prisma`.
 - **Tables:**
   - Better Auth: `user`, `session`, `account`, `verification`, `organization`, `member`, `invitation`.
-  - Skematron: `installation`, `project`, `environment`, `schema_version`, `audit_event`.
+  - Skematron: `installation`, `project`, `environment`, `schema_version`, `schema_draft`, `migration`, `migration_revision`, `migration_review`, `audit_event`.
 - **Artifacts** live outside the database, in `SKEMATRON_ARTIFACT_DIR`. Back up the database, the artifacts and `SKEMATRON_SECRET_KEY` together.
 
 ## Data flow
 
 ```text
-PostgreSQL database (an environment)
-   │  introspectPostgres(session)      read-only transaction, pg_catalog only, always rolled back
-   ▼
+PostgreSQL database (an environment)        schema.prisma
+   │  introspectPostgres(session)                │  preparePrismaSchema → prisma migrate diff → DDL
+   │  read-only, always rolled back              │  DDL runs in a shadow database, then introspectPostgres
+   ▼                                             ▼
 SchemaSnapshot + unsupported[]         what was captured, and what was reported but not captured
    │  canonicalizeSnapshot / serializeSnapshot / snapshotChecksum
    ▼
 canonical JSON (format v1) + sha256    stored as an artifact; recorded as schema version N
-   │  planMigration(from, to)          pure; versions or live drift; matches objects by name
+   │  planMigration(from, to, {answers})  pure; matches objects by name, asks about renames and backfills
    ▼
-MigrationPlan                          ordered operations with risk and warnings, plus unsupported changes
+MigrationPlan                          ordered operations with risk and warnings, unsupported changes, questions
    │  renderPostgresMigration(plan)    produces text; executes nothing
    ▼
 SQL statements + review script
+   │  verifyMigration                  runs in a throwaway shadow database, never a user database
+   ▼
+migration revision                     plan + script artifacts, verification result; reviewed by a second person
 ```
 
 - Nothing in this flow writes to a user database.
@@ -98,8 +142,8 @@ SQL statements + review script
 
 - **Hosted SaaS mode:** several organizations, an SSRF guard for user-supplied hosts, quotas, entitlements and billing.
 - **`apps/cli`,** with API tokens.
-- **Saved plans, review and approvals, then apply.**
-- **Schema-tool adapters:** Prisma Schema, SQL DDL.
+- **Apply (Phase 1b):** run an approved revision against a non-production environment, with locks, checks before and after, and per-environment history. Production protection comes after that.
+- **More schema-tool adapters:** SQL DDL, multi-file Prisma schemas, importing `prisma/migrations` history.
 - **Docker Compose** packaging.
 
 ## Tooling
@@ -110,10 +154,11 @@ SQL statements + review script
   - `pnpm typecheck` runs the root `tsc`, then `next typegen && tsc` for the app.
 - **The local database:** `pnpm db:start` (`scripts/local-postgres.sh`) runs a disposable local PostgreSQL in `.local/`.
   - It holds the `skematron` database (metadata) and `skematron_test` (tests and the `demo` schema).
+  - It creates the `skematron_shadow` role (CREATEDB, not a superuser) for shadow databases.
   - It adds any missing `.env` keys.
   - `pnpm db:seed [v1|v2]` loads the demo schema.
   - `pnpm db:migrate`, `db:deploy` and `db:generate` wrap Prisma.
-- **Tests:** `node:test`, including metadata integration tests in a throwaway `skematron_it_*` database.
+- **Tests:** `node:test`, including metadata and migration integration tests, each in a throwaway `skematron_it_*` database (`lib/test-support.ts`).
 - **Example:** `packages/adapters/examples/export-schema.ts` (`pnpm example:export`) uses the libraries without the dashboard.
 - **Docs tooling:**
   - `scripts/sync-ai.ts` copies `ai/skills` into `.claude/skills` and `.codex/skills`.

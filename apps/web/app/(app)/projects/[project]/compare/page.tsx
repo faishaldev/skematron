@@ -1,6 +1,10 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { planMigration, type SchemaSnapshot } from "@skematron/core";
+import {
+  openQuestions,
+  planMigration,
+  type SchemaSnapshot,
+} from "@skematron/core";
 import { NotFoundError } from "../../../../../lib/errors.ts";
 import { getEnvironment, getProject } from "../../../../../lib/projects.ts";
 import { can } from "../../../../../lib/roles.ts";
@@ -9,7 +13,10 @@ import { readLive } from "../../../../../lib/targets.ts";
 import { getVersion, loadSnapshot } from "../../../../../lib/versions.ts";
 import { PlanView } from "../../../../components/plan-view.tsx";
 import {
+  Breadcrumbs,
+  Callout,
   ErrorPanel,
+  PageHeader,
   param,
   type SearchParams,
 } from "../../../../components/ui.tsx";
@@ -37,6 +44,7 @@ export default async function ComparePage({
   const environmentName = param(query.environment);
 
   let title: string;
+  let subtitle: string;
   let from: SchemaSnapshot;
   let to: SchemaSnapshot;
   let emptyMessage: string;
@@ -59,6 +67,7 @@ export default async function ComparePage({
       const environment = await getEnvironment(actor, project, environmentName);
       to = (await readLive(environment)).snapshot;
       title = `Drift: ${environment.name} since v${fromVersion.number}`;
+      subtitle = `What would change if the ${environment.name} database were brought back to v${fromVersion.number}. Read only; nothing is executed.`;
       emptyMessage = `No drift: ${environment.name} is equivalent to v${fromVersion.number}.`;
     } else {
       const toVersion = await getVersion(
@@ -67,33 +76,62 @@ export default async function ComparePage({
         versionNumber(param(query.to)),
       );
       to = await loadSnapshot(toVersion);
-      title = `v${fromVersion.number} → v${toVersion.number}`;
+      title = `What changed: v${fromVersion.number} → v${toVersion.number}`;
+      subtitle = `The changes that turn v${fromVersion.number} into v${toVersion.number}, with the risk of each. Read only; nothing is executed.`;
       emptyMessage = `No changes: v${toVersion.number} is equivalent to v${fromVersion.number}.`;
     }
   } catch (error) {
     return (
       <>
-        <p>
-          <Link href={base}>← {project.name}</Link>
-        </p>
+        <Breadcrumbs
+          items={[
+            { label: "Projects", href: "/projects" },
+            { label: project.name, href: base },
+            { label: "Compare" },
+          ]}
+        />
         <ErrorPanel title="Cannot compare" error={error} />
       </>
     );
   }
 
+  const plan = planMigration(from, to);
+  const questions = openQuestions(plan).length;
+
   return (
     <>
-      <p>
-        <Link href={base}>← {project.name}</Link>
-      </p>
-      <h1>
-        {project.name}: {title}
-      </h1>
-      <p className="muted">
-        The migration from the first to the second schema, with each
-        statement&apos;s risk. Review only; nothing is executed.
-      </p>
-      <PlanView plan={planMigration(from, to)} emptyMessage={emptyMessage} />
+      <Breadcrumbs
+        items={[
+          { label: "Projects", href: "/projects" },
+          { label: project.name, href: base },
+          { label: "Compare" },
+        ]}
+      />
+      <PageHeader title={title} subtitle={subtitle} />
+      {questions > 0 && (
+        <Callout
+          tone="warning"
+          title={`Skematron has ${questions} ${questions === 1 ? "question" : "questions"} about this change`}
+          actions={
+            environmentName === undefined &&
+            can(actor.role, "author-migrations") ? (
+              <Link
+                href={`${base}/migrations/new?from=${param(query.from)}&to=${param(query.to)}`}
+                className="button primary"
+              >
+                Create a migration to answer them
+              </Link>
+            ) : undefined
+          }
+        >
+          <p>
+            For example, whether a column was renamed or removed. Until they are
+            answered, the list below deletes and re-creates instead, which loses
+            data.
+          </p>
+        </Callout>
+      )}
+      <PlanView plan={plan} emptyMessage={emptyMessage} />
     </>
   );
 }

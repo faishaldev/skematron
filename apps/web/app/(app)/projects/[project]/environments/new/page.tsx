@@ -5,8 +5,10 @@ import { getProject } from "../../../../../../lib/projects.ts";
 import { can } from "../../../../../../lib/roles.ts";
 import { requireActor } from "../../../../../../lib/session.ts";
 import {
+  Breadcrumbs,
   ErrorPanel,
   Flash,
+  PageHeader,
   type SearchParams,
 } from "../../../../../components/ui.tsx";
 import { createEnvironmentAction } from "../../actions.ts";
@@ -36,15 +38,17 @@ export default async function NewEnvironmentPage({
   }
   return (
     <>
-      <p>
-        <Link href={`/projects/${project.slug}`}>← {project.name}</Link>
-      </p>
-      <h1>Add environment</h1>
-      <p className="muted">
-        A PostgreSQL database Skematron reads to import versions and check
-        drift. It only reads the schema (never table data) and never writes. Use
-        a read-only database user where you can.
-      </p>
+      <Breadcrumbs
+        items={[
+          { label: "Projects", href: "/projects" },
+          { label: project.name, href: `/projects/${project.slug}` },
+          { label: "Connect a database" },
+        ]}
+      />
+      <PageHeader
+        title="Connect a database"
+        subtitle="A PostgreSQL database (an environment, such as staging or production) that Skematron reads to import versions and check drift. It only reads the schema, never table data, and never writes. Use a read-only database user where you can."
+      />
       <Flash searchParams={searchParams} />
       <form
         action={createEnvironmentAction}
@@ -81,9 +85,11 @@ export default async function NewEnvironmentPage({
           <input name="namespaces" required defaultValue="public" />
           <span className="hint">Comma-separated, e.g. public, billing.</span>
         </label>
-        <button type="submit" className="primary">
-          Add environment
-        </button>
+        <div>
+          <button type="submit" className="primary">
+            Add environment
+          </button>
+        </div>
       </form>
     </>
   );

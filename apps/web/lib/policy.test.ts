@@ -21,6 +21,14 @@ import {
   parseSecretKey,
   SecretError,
 } from "./secrets.ts";
+import {
+  columnNames,
+  identifier,
+  referentialAction,
+  SchemaInputError,
+  sqlDefault,
+  sqlType,
+} from "./schema-input.ts";
 import { isSlug, slugify } from "./slugs.ts";
 
 describe("roles", () => {
@@ -31,6 +39,8 @@ describe("roles", () => {
       "manage-projects": ["admin", "owner"],
       "manage-members": ["admin", "owner"],
       "view-audit": ["admin", "owner"],
+      "author-migrations": ["member", "admin", "owner"],
+      "review-migrations": ["admin", "owner"],
     };
     for (const [permission, roles] of Object.entries(expected)) {
       assert.deepEqual(
@@ -161,5 +171,73 @@ describe("slugs", () => {
     assert.ok(isSlug(slugify("x".repeat(80))));
     assert.equal(isSlug("../etc"), false);
     assert.equal(isSlug("ok-slug-1"), true);
+  });
+});
+
+describe("schema editor input", () => {
+  it("accepts the types people write and normalizes spacing", () => {
+    for (const type of [
+      "text",
+      "int",
+      "bigint",
+      "numeric(10,2)",
+      "numeric(10, 2)",
+      "character varying(255)",
+      "timestamp with time zone",
+      "timestamp(3) without time zone",
+      "double precision",
+      "app.order_status",
+      '"Role"',
+      'public."Role"',
+      "text[]",
+      "integer[][]",
+    ]) {
+      assert.equal(sqlType(type), type);
+    }
+    assert.equal(
+      sqlType("  timestamp   with time zone "),
+      "timestamp with time zone",
+    );
+  });
+
+  it("rejects types that could carry other SQL", () => {
+    for (const type of [
+      "",
+      "text; DROP TABLE users",
+      "text, other integer",
+      "text DEFAULT 1",
+      "text -- comment",
+      "int /* x */",
+      "text'",
+      "numeric(10,2,3)",
+      "x".repeat(101),
+    ]) {
+      assert.throws(() => sqlType(type), SchemaInputError, type);
+    }
+  });
+
+  it("accepts one default expression without separators or comments", () => {
+    assert.equal(sqlDefault("  "), null);
+    assert.equal(sqlDefault("'draft'"), "'draft'");
+    assert.equal(sqlDefault("now()"), "now()");
+    for (const value of [
+      "1; DROP TABLE t",
+      "0 -- x",
+      "0 /* x */",
+      "a\u0000b",
+    ]) {
+      assert.throws(() => sqlDefault(value), SchemaInputError, value);
+    }
+  });
+
+  it("checks names, column lists and referential actions", () => {
+    assert.equal(identifier("  users ", "Name"), "users");
+    assert.throws(() => identifier("", "Name"), SchemaInputError);
+    assert.throws(() => identifier("x".repeat(64), "Name"), /1 to 63 bytes/);
+    assert.deepEqual(columnNames("a, b ,c", "columns"), ["a", "b", "c"]);
+    assert.deepEqual(columnNames(" ", "columns", true), []);
+    assert.throws(() => columnNames(" ", "columns"), /List the columns/);
+    assert.equal(referentialAction("cascade"), "cascade");
+    assert.throws(() => referentialAction("explode"), SchemaInputError);
   });
 });

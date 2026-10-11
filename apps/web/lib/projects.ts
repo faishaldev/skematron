@@ -24,7 +24,11 @@ export async function listProjects(actor: Actor) {
   return db().project.findMany({
     where: { organizationId: actor.organizationId },
     orderBy: { name: "asc" },
-    include: { _count: { select: { environments: true, versions: true } } },
+    include: {
+      _count: {
+        select: { environments: true, versions: true, migrations: true },
+      },
+    },
   });
 }
 
@@ -43,7 +47,52 @@ export async function getProject(actor: Actor, slug: string) {
 
 export type Project = Awaited<ReturnType<typeof getProject>>;
 
-export async function createProject(actor: Actor, name: string) {
+/**
+ * Where a project's schema is written. "code": a schema.prisma, migrations in the
+ * application's repository, or the database itself; versions are imported. "dashboard":
+ * the schema editor; versions are saved from it.
+ */
+export type SchemaSource = "code" | "dashboard";
+
+export function parseSchemaSource(value: string): SchemaSource {
+  if (value !== "code" && value !== "dashboard") {
+    throw new UserFacingError("Choose where the schema is written.");
+  }
+  return value;
+}
+
+export function schemaSourceOf(project: {
+  schemaSource: string;
+}): SchemaSource {
+  return project.schemaSource === "dashboard" ? "dashboard" : "code";
+}
+
+export async function setSchemaSource(
+  actor: Actor,
+  project: Project,
+  source: SchemaSource,
+): Promise<void> {
+  assertCan(actor, "manage-projects");
+  if (schemaSourceOf(project) === source) return;
+  await db().project.update({
+    where: { id: project.id },
+    data: { schemaSource: source },
+  });
+  await recordAudit({
+    organizationId: actor.organizationId,
+    actorId: actor.userId,
+    action: "project.update",
+    targetType: "project",
+    targetId: project.id,
+    details: { slug: project.slug, schemaSource: source },
+  });
+}
+
+export async function createProject(
+  actor: Actor,
+  name: string,
+  schemaSource: SchemaSource = "code",
+) {
   assertCan(actor, "manage-projects");
   const trimmed = name.trim();
   if (trimmed === "" || trimmed.length > 80) {
@@ -58,6 +107,7 @@ export async function createProject(actor: Actor, name: string) {
           organizationId: actor.organizationId,
           name: trimmed,
           slug,
+          schemaSource,
           createdById: actor.userId,
         },
       });
@@ -67,7 +117,7 @@ export async function createProject(actor: Actor, name: string) {
         action: "project.create",
         targetType: "project",
         targetId: project.id,
-        details: { name: trimmed, slug },
+        details: { name: trimmed, slug, schemaSource },
       });
       return project;
     } catch (error) {

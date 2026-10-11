@@ -235,6 +235,85 @@ describe(
       assert.notDeepEqual(columnOrder(migrated), columnOrder(target));
     });
 
+    it("applies answered renames and backfills and keeps existing rows", async () => {
+      const s = quoteIdent(schema);
+      const createSource = `
+        CREATE TABLE ${s}."User" (id serial PRIMARY KEY, email text NOT NULL);
+        CREATE UNIQUE INDEX "User_email_key" ON ${s}."User" (email);
+        CREATE TABLE ${s}."Post" (
+          id integer PRIMARY KEY,
+          "authorId" integer NOT NULL REFERENCES ${s}."User" (id),
+          title text
+        )`;
+      await client.query(`
+        CREATE TABLE ${s}."Account" (id serial PRIMARY KEY, email text NOT NULL);
+        CREATE UNIQUE INDEX "Account_email_key" ON ${s}."Account" (email);
+        CREATE TABLE ${s}."Post" (
+          id integer PRIMARY KEY,
+          "authorId" integer NOT NULL REFERENCES ${s}."Account" (id),
+          headline text,
+          status text NOT NULL
+        )`);
+      const target = (await introspect()).snapshot;
+      await recreateSchema();
+      await client.query(createSource);
+      const source = (await introspect()).snapshot;
+      await client.query(`
+        INSERT INTO ${s}."User" (email) VALUES ('ada@example.com'), ('bob@example.com');
+        INSERT INTO ${s}."Post" VALUES (1, 2, 'Hello')`);
+
+      const answers = {
+        [JSON.stringify(["rename-table", schema, "User"])]: {
+          choice: "rename",
+          to: "Account",
+        },
+        [JSON.stringify(["rename-sequence", schema, "User_id_seq"])]: {
+          choice: "rename",
+          to: "Account_id_seq",
+        },
+        [JSON.stringify(["rename-column", schema, "Post", "title"])]: {
+          choice: "rename",
+          to: "headline",
+        },
+        [JSON.stringify(["backfill", schema, "Post", "status"])]: {
+          choice: "backfill",
+          value: "it's a draft",
+        },
+      } as const;
+      const plan = planMigration(source, target, { answers });
+      assert.deepEqual(
+        plan.questions.filter((question) => question.answer === null),
+        [],
+      );
+      assert.ok(plan.operations.every((op) => op.risk !== "destructive"));
+      for (const statement of renderPostgresMigration(plan).statements)
+        await client.query(statement.sql);
+
+      const migrated = (await introspect()).snapshot;
+      assert.ok(
+        isEmptyPlan(planMigration(migrated, target)),
+        "migrated schema should be equivalent to the target",
+      );
+      const accounts = await client.query(
+        `SELECT id, email FROM ${s}."Account" ORDER BY id`,
+      );
+      assert.deepEqual(accounts.rows, [
+        { id: 1, email: "ada@example.com" },
+        { id: 2, email: "bob@example.com" },
+      ]);
+      const posts = await client.query(
+        `SELECT "authorId", headline, status FROM ${s}."Post"`,
+      );
+      assert.deepEqual(posts.rows, [
+        { authorId: 2, headline: "Hello", status: "it's a draft" },
+      ]);
+      // The renamed sequence keeps counting where it was.
+      const next = await client.query(
+        `INSERT INTO ${s}."Account" (email) VALUES ('cy@example.com') RETURNING id`,
+      );
+      assert.equal(next.rows[0].id, 3);
+    });
+
     it("marks the reverse migration's data loss as destructive and unsupported", async () => {
       await load("v1");
       const v1 = (await introspect()).snapshot;

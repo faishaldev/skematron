@@ -2,30 +2,21 @@
 // own skematron_it_<random> database next to SKEMATRON_TEST_DATABASE_URL, applies the Prisma
 // migrations, and drops it afterwards. Better Auth rows are created directly with Prisma.
 import assert from "node:assert/strict";
-import { execFileSync } from "node:child_process";
-import { randomBytes, randomUUID } from "node:crypto";
-import { mkdtemp, readdir, rm, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { randomUUID } from "node:crypto";
+import { readdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { after, before, describe, it } from "node:test";
-import pg from "pg";
 import { snapshotChecksum } from "@skematron/core";
 import { column, namespace, snapshot, table } from "@skematron/core/testing";
 import type { Actor } from "./actor.ts";
+import {
+  actorFor,
+  createTestMetadataDatabase,
+  createUser as createUserIn,
+  createOrganization as createOrganizationIn,
+} from "./test-support.ts";
 
 const testUrl = process.env.SKEMATRON_TEST_DATABASE_URL;
-const repositoryRoot = join(import.meta.dirname, "../../..");
-
-/** A URL for another database on the same server, in the form Prisma's engine accepts. */
-function siblingDatabaseUrl(url: string, database: string): string {
-  const parsed = new URL(url);
-  const socket = parsed.searchParams.get("host");
-  const port = parsed.port || parsed.searchParams.get("port") || "5432";
-  const user = parsed.username || process.env.USER || "postgres";
-  const auth = parsed.password ? `${user}:${parsed.password}` : user;
-  const host = parsed.hostname || "localhost";
-  return `postgresql://${auth}@${host}:${port}/${database}${socket === null ? "" : `?host=${socket}`}`;
-}
 
 describe(
   "metadata database",
@@ -35,8 +26,7 @@ describe(
       : "set SKEMATRON_TEST_DATABASE_URL to run metadata integration tests",
   },
   () => {
-    const database = `skematron_it_${randomBytes(6).toString("hex")}`;
-    let admin: pg.Client;
+    let metadata: Awaited<ReturnType<typeof createTestMetadataDatabase>>;
     let artifactDir = "";
     let lib: {
       db: typeof import("./db.ts");
@@ -47,23 +37,8 @@ describe(
     };
 
     before(async () => {
-      admin = new pg.Client({ connectionString: testUrl });
-      await admin.connect();
-      await admin.query(`CREATE DATABASE ${database}`);
-      const url = siblingDatabaseUrl(testUrl!, database);
-      assert.ok(
-        url.includes(`/${database}`),
-        "refusing to migrate anything but the test database",
-      );
-      process.env.SKEMATRON_DATABASE_URL = url;
-      process.env.SKEMATRON_SECRET_KEY = randomBytes(32).toString("base64");
-      artifactDir = await mkdtemp(join(tmpdir(), "skematron-it-"));
-      process.env.SKEMATRON_ARTIFACT_DIR = artifactDir;
-      execFileSync("pnpm", ["exec", "prisma", "migrate", "deploy"], {
-        cwd: repositoryRoot,
-        env: { ...process.env, SKEMATRON_DATABASE_URL: url },
-        stdio: "pipe",
-      });
+      metadata = await createTestMetadataDatabase(testUrl!);
+      artifactDir = metadata.artifactDir;
       lib = {
         db: await import("./db.ts"),
         membership: await import("./membership.ts"),
@@ -75,52 +50,13 @@ describe(
 
     after(async () => {
       await lib?.db.db().$disconnect();
-      await admin.query(`DROP DATABASE IF EXISTS ${database} WITH (FORCE)`);
-      await admin.end();
-      await rm(artifactDir, { recursive: true, force: true });
+      await metadata?.drop();
     });
 
     const prisma = () => lib.db.db();
-
-    async function createUser(email: string) {
-      return prisma().user.create({
-        data: {
-          id: randomUUID(),
-          email,
-          name: email.split("@")[0]!,
-          emailVerified: false,
-        },
-      });
-    }
-
-    async function createOrganization(slug: string, owner: { id: string }) {
-      const organization = await prisma().organization.create({
-        data: { id: randomUUID(), name: slug, slug, createdAt: new Date() },
-      });
-      const member = await prisma().member.create({
-        data: {
-          id: randomUUID(),
-          organizationId: organization.id,
-          userId: owner.id,
-          role: "owner",
-          createdAt: new Date(),
-        },
-      });
-      return { organization, member };
-    }
-
-    const actorFor = (
-      user: { id: string; email: string },
-      organizationId: string,
-      role: Actor["role"],
-    ): Actor => ({
-      userId: user.id,
-      name: user.email,
-      email: user.email,
-      organizationId,
-      memberId: randomUUID(),
-      role,
-    });
+    const createUser = (email: string) => createUserIn(prisma(), email);
+    const createOrganization = (slug: string, owner: { id: string }) =>
+      createOrganizationIn(prisma(), slug, owner);
 
     let ownerActor: Actor;
     let viewerActor: Actor;

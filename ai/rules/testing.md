@@ -8,14 +8,18 @@
 - **Web app tests** live in `apps/web/lib/*.test.ts`:
   - Pure modules: `policy.test.ts`.
   - The metadata layer: `metadata.integration.test.ts`.
+  - Shadow databases, Prisma import and the migration workflow: `migrations.integration.test.ts`.
+  - Shared setup is in `test-support.ts`.
   - Use temporary directories, never `.local/artifacts`.
 - SQL fixtures live in `packages/adapters/src/postgres/fixtures/` and use `__SCHEMA__` for the schema name.
+- Prisma schema fixtures live in `packages/adapters/src/prisma/fixtures/`.
 
 ## Integration tests and databases
 
 - **Integration tests run only when `SKEMATRON_TEST_DATABASE_URL` is set.** Otherwise they skip with a visible reason.
 - **Point the URL only at a dedicated, disposable database.** `pnpm db:start` runs one locally (see AGENTS.md "Development").
 - **Adapter tests use their own schema.** Each test creates its own `skematron_test_<random>` schema, works only inside it, and drops only that schema; the drop is guarded by the prefix.
+- **Migration tests also need `SKEMATRON_SHADOW_DATABASE_URL`.** They check that no `skematron_shadow_*` database is left behind.
 - **Metadata tests use their own database.** They create a `skematron_it_<random>` database on the same server, migrate it with `prisma migrate deploy`, and drop it afterwards.
   - Refuse to migrate any other database.
   - `process.loadEnvFile` never overrides variables you set, so pass `SKEMATRON_DATABASE_URL` explicitly.
@@ -39,4 +43,4 @@
 
 - `pnpm check` must pass.
 - When you touch the adapter, planner or renderer, run the integration tests against the local cluster.
-- **When you touch dashboard pages, also click through the changed flow** with `pnpm web`, or post the forms with curl (see the server-action gotcha in `ai/knowledges/gotchas.md`). Then reset the dev database if you created test accounts.
+- **When you touch dashboard pages, also click through the changed flow.** Follow the `walking-through-the-dashboard` skill: a production build on another port with a scratch metadata database, so the developer's own dev server and data stay untouched.

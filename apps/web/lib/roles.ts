@@ -13,7 +13,11 @@ export type Permission =
   | "manage-projects"
   /** Invite and remove members, change roles. */
   | "manage-members"
-  | "view-audit";
+  | "view-audit"
+  /** Import Prisma schemas as versions; create, revise and submit migrations. */
+  | "author-migrations"
+  /** Approve or reject migrations. Never your own: see lib/migrations.ts. */
+  | "review-migrations";
 
 const MINIMUM_ROLE: Record<Permission, Role> = {
   read: "viewer",
@@ -21,6 +25,8 @@ const MINIMUM_ROLE: Record<Permission, Role> = {
   "manage-projects": "admin",
   "manage-members": "admin",
   "view-audit": "admin",
+  "author-migrations": "member",
+  "review-migrations": "admin",
 };
 
 const rank = (role: Role): number => ROLES.indexOf(role);

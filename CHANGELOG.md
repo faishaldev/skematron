@@ -49,6 +49,60 @@ All notable changes to Skematron are recorded here. The format follows [Keep a C
   - `pnpm example:export [schema…]` reads a schema (read-only) and prints its checksum, the objects it could not capture, and the SQL that recreates it. Set `DATABASE_URL` to read your own database instead.
 - **AI docs** for Claude Code, Codex and other agents:
   - rules in `ai/rules/`
-  - skills in `ai/skills/` (`documenting-changes`, `extending-postgres-support`), copied to `.claude/skills` and `.codex/skills` by `pnpm sync:ai`
+  - skills in `ai/skills/` (`documenting-changes`, `extending-postgres-support`, `walking-through-the-dashboard`), copied to `.claude/skills` and `.codex/skills` by `pnpm sync:ai`
   - knowledges in `ai/knowledges/`
 - **Documentation gate (`pnpm check:docs`).** Fails when source changes lack a CHANGELOG entry or when the skill copies drift from `ai/skills`.
+- **Guided migration plans in `@skematron/core`.**
+  - `planMigration(from, to, { answers })` now also returns `questions`, instead of silently turning renames into drops:
+    - Was a missing table, column or sequence renamed? Candidates are new objects of the same shape.
+    - What value should existing rows get in a new NOT NULL column?
+  - Answers turn drop-plus-create into `rename-table`, `rename-column` or `rename-sequence` operations, and fill new NOT NULL columns through a temporary default. Rows and sequence counters are kept.
+  - Invalid answers, and answers that match no question, are rejected.
+  - Helpers: `openQuestions` and `answersOf`.
+- **`@skematron/adapters` Prisma Schema adapter:** `preparePrismaSchema` checks for one PostgreSQL datasource and removes connection URLs, so Prisma 5, 6 and 7 schemas can be imported.
+- **Dashboard: import `schema.prisma` as a version.**
+  - Upload or paste the file on the project page. Prisma's own CLI turns it into SQL, which runs in a throwaway shadow database; Skematron reads the result.
+  - The stored schema file (without connection URLs) can be downloaded from the version page.
+- **Dashboard: migrations.**
+  - Create a migration between two versions, answer its questions in the browser, and see the plan and SQL for each revision.
+  - Every revision is immutable and is checked in a shadow database: the starting version is recreated, the plan runs statement by statement, and the result must match the target version.
+  - Submit for review once there are no open questions or unsupported changes and the check passed.
+  - An admin or owner who wrote neither the migration nor the revision approves or rejects it. Approving destructive operations needs an explicit acknowledgment; rejecting needs a comment. Changing anything makes a new revision, which goes back to draft.
+  - Download the reviewed script as `migration.sql`. Skematron does not run it yet.
+  - New permissions: `author-migrations` (member and up) and `review-migrations` (admin and up). Migration steps are recorded in the audit log.
+- **Shadow database (`SKEMATRON_SHADOW_DATABASE_URL`).** A dedicated, disposable PostgreSQL server where Skematron creates and drops temporary `skematron_shadow_*` databases. It refuses a superuser role. `pnpm db:start` creates a `skematron_shadow` role locally and adds the variable to `.env`. See `docs/self-hosting.md`.
+- **Sample Prisma schemas** in `packages/adapters/src/prisma/fixtures/` for trying migrations.
+- **Dashboard: a schema editor** for projects whose schema is written in the dashboard.
+  - Each project now has a **schema source**:
+    - "code": versions are imported from a `schema.prisma` or an environment.
+    - "dashboard": people edit the schema in Skematron.
+  - The source is chosen when the project is created. Admins can change it on the project page.
+  - In the editor, add tables (with an ID column), columns (type, required, default, unique), indexes and foreign keys. Changes go into your own private draft.
+  - Every change is checked by PostgreSQL in a shadow database:
+    - Types and defaults are stored the way PostgreSQL prints them (`int` becomes `integer`).
+    - Mistakes such as an unknown type are rejected with PostgreSQL's message.
+  - **Save as version** records the draft as the next version, then leads to a new migration from the version it started from. If someone else saved a version in the meantime, saving is refused, so their changes are never overwritten.
+  - Importing a `schema.prisma` works only for "code" projects, and the editor only for "dashboard" projects, so a project never has two sources of truth.
+- **`@skematron/core` schema editing:** `addTable`, `addColumn`, `addUniqueConstraint`, `addIndex` and `addForeignKey` return a new, validated snapshot.
+- **`@skematron/adapters` `renderIndexDefinition`:** the `CREATE INDEX` statement for a new B-tree index, with every name quoted.
+
+### Changed
+
+- **The dashboard is easier to follow.**
+  - **Every page:** breadcrumbs, a clear title, and the main buttons at the top right.
+  - **Project page:** an overview that says what to do next (for example "M2 is not submitted yet", or "v3 has no migration yet"), with counts of versions, migrations and databases. Project settings are folded away.
+  - **Migration page:**
+    - Progress steps: answer questions, test run, review, approved.
+    - One box with the next step. Reviewers approve or reject right there.
+    - Questions are written as plain choices ("Yes, renamed to displayName: keeps the existing data").
+  - **Changes in plain language:** "Rename column User.fullName to displayName", "Delete column Post.published and its data". The SQL of each change, technical steps, the full script and the history are one click away.
+  - **Schema editor:** your changes and the schema are on the left, and the "Add a table / column / foreign key / index" forms in a side panel.
+  - **Versions:** a summary of tables, columns and enums. Columns read as type, required and default. Keys, links and indexes are shown as labels. Sequences, checksums and downloads are folded away.
+  - **Other pages:**
+    - Projects are listed as cards. New projects choose their schema source from two described options.
+    - Sign-in, setup and invitations are a centered card.
+    - Light and dark mode are both polished.
+
+### Fixed
+
+- **A running `pnpm web` no longer fails with "Cannot read properties of undefined (reading 'findMany')" after a metadata schema change.** The dashboard rebuilds its Prisma client when the generated client changes, instead of keeping the old one across hot reloads.

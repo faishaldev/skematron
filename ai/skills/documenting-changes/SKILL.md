@@ -38,7 +38,7 @@ Leave the documentation as accurate as the code, in the same change. This skill 
 8. **Sync and verify.**
    - Run `pnpm sync:ai`, then `pnpm check`, and fix anything they report.
    - If you touched the adapter, planner, renderer or the metadata layer, also run the integration tests (`pnpm db:start`, then `pnpm test`).
-   - If you touched dashboard pages or actions, click through the changed flow with `pnpm web` (see `ai/rules/testing.md`).
+   - If you touched dashboard pages or actions, click through the changed flow with the `walking-through-the-dashboard` skill.
 
 ## Done when
 

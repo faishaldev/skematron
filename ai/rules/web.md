@@ -15,6 +15,7 @@ Read before changing anything in `apps/web/`. These rules add to AGENTS.md and n
 - **Not multi-tenant yet.** Hosted SaaS mode needs these first:
   - an SSRF guard for user-supplied database hosts (AGENTS.md "Security")
   - quotas and entitlements
+  - stronger shadow-database isolation: members can run SQL there through Prisma's `dbgenerated(...)` (decision D17)
 
 ## Authentication and authorization
 
@@ -38,7 +39,11 @@ Read before changing anything in `apps/web/`. These rules add to AGENTS.md and n
 - Connection URLs are validated by `lib/connections.ts`: postgresql only, and an allow-list of parameters, with no file-reading SSL parameters.
 - They are stored only encrypted (`lib/secrets.ts`, AES-256-GCM, `SKEMATRON_SECRET_KEY`).
 - **Never send a URL, password or decrypted secret** to the browser, the HTML, logs, audit details or error messages. Show `connectionHint` only.
-- **Only `lib/targets.ts` decrypts and connects.** It only introspects, read-only. Nothing in the app writes to a user database. Apply needs its own design and authorization flow.
+- **Only `lib/targets.ts` decrypts environment URLs and connects to user databases.** It only introspects, read-only. Nothing in the app writes to a user database. Apply needs its own design and authorization flow.
+- **SQL derived from user input runs only in the shadow database** (`lib/shadow.ts`): Prisma's DDL and migration plans.
+  - It uses a fresh `skematron_shadow_*` database per run, drops it afterwards, and refuses a superuser role.
+  - Never run such SQL anywhere else, and never point the shadow URL at a server with real data.
+- **The Prisma CLI** runs only through `lib/prisma-import.ts`: in a temporary directory, with a timeout, and with an environment that contains none of Skematron's secrets. Connection URLs are removed from a schema before it is run or stored.
 - Edit forms never pre-fill a stored URL. An empty field means "keep the current one".
 
 ## Data rules
@@ -46,14 +51,34 @@ Read before changing anything in `apps/web/`. These rules add to AGENTS.md and n
 - **Schema versions are immutable.**
   - `lib/versions.ts` stores the snapshot in `@skematron/storage` first. Then, under a per-project advisory lock, it records the next number, or reports "unchanged".
   - Never update or delete a version.
+- **The schema editor** (`lib/schema-drafts.ts`):
+  - Works only for projects whose schema source is "dashboard"; Prisma import only for "code". Keep that split, so a project never has two sources of truth.
+  - Drafts are private to their author and mutable.
+  - Every edit goes through core's edit functions, then `normalizeSnapshot` in the shadow database. Never store a typed fragment without that round trip.
+  - Check typed names, types and defaults with `lib/schema-input.ts` first.
+  - Save only through `recordVersion` with `basedOn`.
+- **Migrations** (`lib/migrations.ts`):
+  - Revisions and reviews are immutable; only `Migration.status` changes, under the per-migration advisory lock.
+  - A new revision always resets the status to draft.
+  - Submitting needs zero open questions, zero unsupported changes and a passed verification.
+  - Approve or reject needs `review-migrations`, and the reviewer must not have written the migration or the revision. Approving destructive operations needs an explicit acknowledgment, rejecting needs a comment, and the reviewed revision id must still be the latest.
+  - Pages show the stored plan and script artifacts of a revision, not a fresh rendering.
 - **Audit every privileged action** with `recordAudit` (`lib/audit.ts`). Add new actions to its `AuditAction` type.
 - Configuration comes from `lib/env.ts`. It is read lazily and must fail with a clear message.
+
+## Pages and wording
+
+- **Every page starts the same way:** `Breadcrumbs`, then `PageHeader` (title, optional badge and subtitle, main actions on the right), then `Flash`. These and `Callout`, `Steps`, `Empty` and `Stat` are in `app/components/ui.tsx`.
+- **Tell people what to do next.** Pages with a workflow (project, migration) show one `Callout` with the next step and its button. Empty lists use `Empty` and say how to fill them.
+- **Plain language first, SQL second.** Plans are shown with `PlanView`: one sentence per change (`describeOperation`), its risk and warnings, and the SQL behind a `<details>`. Technical steps (sequences, temporary defaults) are folded away. Checksums, history and downloads go into `<details>` too.
+- **Words people use:** "test run", not "shadow check"; "database", not "environment", in headings; "Deletes data", not "destructive", in badges. Keep stored values and audit actions unchanged.
+- Style with the classes in `app/globals.css` (`button`/`.button`, `.primary`, `.card`, `.card.flush`, `.callout`, `label.option`, `.accordion`). Both light and dark mode must work.
 
 ## Code conventions
 
 - **Server actions use `runAction()`** from `lib/actions.ts`. They redirect with `?notice=` or `?error=`, and only `messageFor()` decides what an error may show.
 - Validate every form field and URL parameter. Route parameters reach `lib/` functions only through validated lookups.
-- Use server components by default. There are no client components yet; add one only when an interaction needs it.
+- Use server components by default. There are no client components yet; add one only when an interaction needs it. Collapsible parts use `<details>`, which needs no JavaScript.
 - **Domain logic stays in `@skematron/core` and `@skematron/adapters`.** `lib/` modules hold the app logic and are testable with `node:test`:
   - Pure modules: `roles`, `secrets`, `connections`, `slugs`.
   - Metadata modules, covered by `lib/metadata.integration.test.ts`.

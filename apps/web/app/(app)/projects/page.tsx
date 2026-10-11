@@ -1,8 +1,14 @@
 import Link from "next/link";
-import { listProjects } from "../../../lib/projects.ts";
+import { listProjects, schemaSourceOf } from "../../../lib/projects.ts";
 import { can } from "../../../lib/roles.ts";
 import { requireActor } from "../../../lib/session.ts";
-import { Flash, type SearchParams } from "../../components/ui.tsx";
+import {
+  Empty,
+  Flash,
+  PageHeader,
+  plural,
+  type SearchParams,
+} from "../../components/ui.tsx";
 import { createProjectAction } from "./actions.ts";
 
 export const dynamic = "force-dynamic";
@@ -14,56 +20,91 @@ export default async function ProjectsPage({
 }) {
   const actor = await requireActor();
   const projects = await listProjects(actor);
+  const canCreate = can(actor.role, "manage-projects");
   return (
     <>
-      <h1>Projects</h1>
+      <PageHeader
+        title="Projects"
+        subtitle="A project tracks one application's database schema: its versions, the migrations between them, and the databases it runs on."
+      />
       <Flash searchParams={searchParams} />
       {projects.length === 0 ? (
-        <p className="muted">
-          No projects yet.
-          {can(actor.role, "manage-projects")
-            ? " Create one to start tracking a database schema."
-            : " Ask an admin to create one."}
-        </p>
+        <Empty title="No projects yet">
+          <p>
+            {canCreate
+              ? "Create your first project below."
+              : "Ask an admin to create one."}
+          </p>
+        </Empty>
       ) : (
-        <div className="card">
-          <table>
-            <thead>
-              <tr>
-                <th>Project</th>
-                <th>Environments</th>
-                <th>Versions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {projects.map((project) => (
-                <tr key={project.id}>
-                  <td>
-                    <Link href={`/projects/${project.slug}`}>
-                      <strong>{project.name}</strong>
-                    </Link>
-                  </td>
-                  <td>{project._count.environments}</td>
-                  <td>{project._count.versions}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+        <div className="project-cards">
+          {projects.map((project) => (
+            <Link
+              key={project.id}
+              href={`/projects/${project.slug}`}
+              className="project-card"
+            >
+              <h3>{project.name}</h3>
+              <p className="hint">
+                {schemaSourceOf(project) === "dashboard"
+                  ? "Schema written in Skematron"
+                  : "Schema written in code"}
+              </p>
+              <p className="small muted">
+                {plural(project._count.versions, "version")} ·{" "}
+                {plural(project._count.migrations, "migration")} ·{" "}
+                {plural(project._count.environments, "database")}
+              </p>
+            </Link>
+          ))}
         </div>
       )}
-      {can(actor.role, "manage-projects") && (
-        <div className="card">
+      {canCreate && (
+        <div className="card" style={{ maxWidth: 640 }}>
           <h3>New project</h3>
-          <form action={createProjectAction} className="inline">
-            <input
-              name="name"
-              placeholder="Project name"
-              required
-              maxLength={80}
-            />
-            <button type="submit" className="primary">
-              Create project
-            </button>
+          <form action={createProjectAction} className="stack">
+            <label>
+              Name
+              <input
+                name="name"
+                placeholder="e.g. Billing API"
+                required
+                maxLength={80}
+              />
+            </label>
+            <fieldset>
+              <legend>Where is the schema written?</legend>
+              <label className="option">
+                <input
+                  type="radio"
+                  name="schemaSource"
+                  value="code"
+                  defaultChecked
+                />
+                <span>
+                  <strong>In code</strong>
+                  <span className="hint">
+                    Your team edits a schema.prisma (or the database itself) and
+                    imports each change into Skematron.
+                  </span>
+                </span>
+              </label>
+              <label className="option">
+                <input type="radio" name="schemaSource" value="dashboard" />
+                <span>
+                  <strong>In Skematron</strong>
+                  <span className="hint">
+                    Your team adds tables and columns in Skematron&apos;s schema
+                    editor. No ORM needed.
+                  </span>
+                </span>
+              </label>
+            </fieldset>
+            <div>
+              <button type="submit" className="primary">
+                Create project
+              </button>
+            </div>
           </form>
         </div>
       )}

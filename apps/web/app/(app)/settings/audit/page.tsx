@@ -1,7 +1,7 @@
 import { db } from "../../../../lib/db.ts";
 import { can } from "../../../../lib/roles.ts";
 import { requireActor } from "../../../../lib/session.ts";
-import { ErrorPanel, formatDate } from "../../../components/ui.tsx";
+import { ErrorPanel, formatDate, PageHeader } from "../../../components/ui.tsx";
 
 export const dynamic = "force-dynamic";
 
@@ -35,11 +35,11 @@ export default async function AuditPage() {
 
   return (
     <>
-      <h1>Audit log</h1>
-      <p className="muted">
-        The latest 200 privileged actions. Details never contain secrets.
-      </p>
-      <div className="card">
+      <PageHeader
+        title="Audit log"
+        subtitle="The latest 200 important actions: who did what, and when. Details never contain passwords or connection secrets."
+      />
+      <div className="card flush">
         <table>
           <thead>
             <tr>

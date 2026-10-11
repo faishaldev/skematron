@@ -1,9 +1,18 @@
 // Errors whose messages are safe to show to the signed-in user. Anything else is shown as
 // a generic message and logged on the server.
-import { PostgresIntrospectionError } from "@skematron/adapters";
+import {
+  PlanningError,
+  SchemaEditError,
+  SnapshotValidationError,
+} from "@skematron/core";
+import {
+  PostgresIntrospectionError,
+  PrismaSchemaError,
+} from "@skematron/adapters";
 import { ArtifactStoreError } from "@skematron/storage";
 import { ConnectionUrlError } from "./connections.ts";
 import { InvitationError } from "./membership.ts";
+import { SchemaInputError } from "./schema-input.ts";
 
 export class UserFacingError extends Error {
   constructor(message: string) {
@@ -30,7 +39,12 @@ const SAFE_ERRORS = [
   UserFacingError,
   ConnectionUrlError,
   InvitationError,
+  SchemaInputError,
   PostgresIntrospectionError,
+  PrismaSchemaError,
+  PlanningError,
+  SchemaEditError,
+  SnapshotValidationError,
   ArtifactStoreError,
 ];
 

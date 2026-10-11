@@ -3,7 +3,7 @@ import { describe, it } from "node:test";
 import type { MigrationPlan, Operation } from "@skematron/core";
 import { column, foreignKey, sequence, table } from "@skematron/core/testing";
 import { commentText, quoteIdent, quoteLiteral } from "./quote.ts";
-import { renderPostgresMigration } from "./render.ts";
+import { renderIndexDefinition, renderPostgresMigration } from "./render.ts";
 
 function plan(
   operations: Operation[],
@@ -17,6 +17,7 @@ function plan(
       warnings: [],
     })),
     unsupported,
+    questions: [],
   };
 }
 
@@ -24,6 +25,46 @@ const orders = { namespace: "app", tableName: "orders" } as const;
 const qty = { ...orders, columnName: "qty" } as const;
 
 const CASES: [Operation, string][] = [
+  [
+    {
+      kind: "rename-table",
+      namespace: "app",
+      tableName: "users",
+      newName: "Account",
+    },
+    `ALTER TABLE "app"."users" RENAME TO "Account"`,
+  ],
+  [
+    { kind: "rename-column", ...qty, newName: "quantity" },
+    `ALTER TABLE "app"."orders" RENAME COLUMN "qty" TO "quantity"`,
+  ],
+  [
+    {
+      kind: "rename-sequence",
+      namespace: "app",
+      sequenceName: "users_id_seq",
+      newName: "Account_id_seq",
+    },
+    `ALTER SEQUENCE "app"."users_id_seq" RENAME TO "Account_id_seq"`,
+  ],
+  [
+    {
+      kind: "add-column",
+      ...orders,
+      column: column("owner", "text", { nullable: false }),
+      backfill: "O'Brien",
+    },
+    `ALTER TABLE "app"."orders" ADD COLUMN "owner" text DEFAULT 'O''Brien'::text NOT NULL`,
+  ],
+  [
+    {
+      kind: "add-column",
+      ...orders,
+      column: column("path", "character varying(20)", { nullable: false }),
+      backfill: "C:\\tmp",
+    },
+    `ALTER TABLE "app"."orders" ADD COLUMN "path" character varying(20) DEFAULT E'C:\\\\tmp'::character varying(20) NOT NULL`,
+  ],
   [
     { kind: "create-namespace", namespace: "app" },
     `CREATE SCHEMA IF NOT EXISTS "app"`,
@@ -338,6 +379,7 @@ describe("renderPostgresMigration", () => {
         },
       ],
       unsupported: [{ object: "app.e", reason: "Enum values were removed." }],
+      questions: [],
     }).script;
     assert.equal(
       script,
@@ -360,6 +402,41 @@ ALTER TABLE "app"."t" ALTER COLUMN "c" SET NOT NULL;
 -- [safe]
 CREATE SCHEMA IF NOT EXISTS "new";
 `,
+    );
+  });
+
+  it("warns about open questions in the script header", () => {
+    const { script } = renderPostgresMigration({
+      ...plan([{ kind: "drop-table", namespace: "app", tableName: "old" }]),
+      questions: [
+        {
+          id: '["rename-table","app","old"]',
+          kind: "rename-table",
+          namespace: "app",
+          tableName: "old",
+          candidates: ["new"],
+          answer: null,
+        },
+      ],
+    });
+    assert.match(
+      script,
+      /^-- OPEN QUESTIONS: 1\. Answer them before applying/m,
+    );
+  });
+
+  it("rejects a backfill value that PostgreSQL strings cannot hold", () => {
+    assert.throws(() =>
+      renderPostgresMigration(
+        plan([
+          {
+            kind: "add-column",
+            ...orders,
+            column: column("c", "text", { nullable: false }),
+            backfill: "a\0b",
+          },
+        ]),
+      ),
     );
   });
 
@@ -386,6 +463,7 @@ CREATE SCHEMA IF NOT EXISTS "new";
         },
       ],
       unsupported: [{ object: hostile, reason: "test\r\nDROP TABLE victim;" }],
+      questions: [],
     });
     const header = script.slice(0, script.indexOf("\n\n"));
     for (const line of header.split("\n"))
@@ -408,6 +486,30 @@ CREATE SCHEMA IF NOT EXISTS "new";
   it("refuses plans for another dialect", () => {
     const other = { ...plan([]), dialect: "mysql" } as unknown as MigrationPlan;
     assert.throws(() => renderPostgresMigration(other));
+  });
+});
+
+describe("renderIndexDefinition", () => {
+  it("quotes every name", () => {
+    assert.equal(
+      renderIndexDefinition({
+        namespace: "app",
+        tableName: "Order",
+        name: 'odd"name',
+        columns: ["customerId", "created at"],
+        unique: true,
+      }),
+      `CREATE UNIQUE INDEX "odd""name" ON "app"."Order" USING btree ("customerId", "created at")`,
+    );
+    assert.throws(() =>
+      renderIndexDefinition({
+        namespace: "app",
+        tableName: "t",
+        name: "i",
+        columns: [],
+        unique: false,
+      }),
+    );
   });
 });
 

@@ -7,6 +7,10 @@
 #   skematron       Skematron's own metadata database (SKEMATRON_DATABASE_URL)
 #   skematron_test  integration tests and the sample "demo" schema (SKEMATRON_TEST_DATABASE_URL)
 #
+# Role skematron_shadow (CREATEDB, not a superuser) creates and drops the temporary
+# skematron_shadow_* databases that check migrations and convert Prisma schemas
+# (SKEMATRON_SHADOW_DATABASE_URL). Self-hosted installs use a dedicated server for this.
+#
 #   sh scripts/local-postgres.sh start     # first run initializes; adds missing .env keys
 #   sh scripts/local-postgres.sh seed      # (re)creates a sample "demo" schema in skematron_test
 #   sh scripts/local-postgres.sh seed v2   # the same, from the changed version (to try Compare)
@@ -36,6 +40,14 @@ ensure_database() {
   fi
 }
 
+ensure_shadow_role() {
+  if ! psql -h "$dir" -p "$port" -d postgres -Atc \
+    "SELECT 1 FROM pg_roles WHERE rolname = 'skematron_shadow'" | grep -qx 1; then
+    psql -h "$dir" -p "$port" -d postgres -qc \
+      "CREATE ROLE skematron_shadow LOGIN CREATEDB NOSUPERUSER NOCREATEROLE"
+  fi
+}
+
 case "${1:-}" in
   start)
     if [ ! -f "$dir/data/PG_VERSION" ]; then
@@ -48,8 +60,10 @@ case "${1:-}" in
     fi
     ensure_database skematron
     ensure_database skematron_test
+    ensure_shadow_role
     ensure_env SKEMATRON_TEST_DATABASE_URL "postgresql:///skematron_test?host=$dir&port=$port"
     ensure_env SKEMATRON_DATABASE_URL "postgresql://$user@localhost:$port/skematron?host=$dir"
+    ensure_env SKEMATRON_SHADOW_DATABASE_URL "postgresql://skematron_shadow@localhost:$port/postgres?host=$dir"
     ensure_env SKEMATRON_SECRET_KEY "$(openssl rand -base64 32)"
     ensure_env BETTER_AUTH_SECRET "$(openssl rand -base64 32)"
     ensure_env BETTER_AUTH_URL "http://127.0.0.1:3100"

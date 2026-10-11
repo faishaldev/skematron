@@ -31,6 +31,7 @@ Read before changing anything in `packages/core/`. These rules add to AGENTS.md 
   - a risk level and warnings
   - an execution phase in `Phase` that respects dependencies
   - rendering in every database adapter
+  - a plain-language description in the dashboard (`describeOperation` in `apps/web/app/components/plan-view.tsx`; TypeScript flags a missing case)
   - tests: order, risk, and a round trip in the adapter's integration tests
 - Risk levels:
   - `destructive`: data can be lost.
@@ -39,7 +40,17 @@ Read before changing anything in `packages/core/`. These rules add to AGENTS.md 
 
   When unsure, choose the higher level.
 - Put differences the planner cannot express in `unsupported`, with a reason. Never skip them silently.
-- Match objects by name. Do not guess renames.
+- Match objects by name. Never guess a rename: offer it as a question (`questions.ts`), and act only on an answer.
+- **Questions:**
+  - Question ids are JSON arrays of the kind and the object's names, and must stay stable: stored revisions refer to them.
+  - Answers are validated at runtime (they come from forms and the database). An answer that does not fit its question throws `PlanningError`. An answer for a question that does not exist throws too, unless the caller passes `ignoreUnusedAnswers`.
+  - A new question kind needs detection tests, answer tests (including invalid answers), and an adapter round trip that keeps existing rows.
+
+## Schema editing (`edit.ts`)
+
+- Edit functions take a snapshot and return a new canonical one. They never change their input.
+- They check what core can know: the target table exists, names are not duplicated, and referenced columns exist.
+- They do not judge SQL fragments (types, defaults, index definitions). The caller checks those against a real engine, as the dashboard does in the shadow database.
 
 ## Tests
 

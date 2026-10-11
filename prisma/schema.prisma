@@ -33,10 +33,15 @@ model Project {
   organizationId String
   slug           String
   name           String
+  /// Where the schema is written: "code" (a schema.prisma or the database itself) or
+  /// "dashboard" (the schema editor). The editor works only for "dashboard".
+  schemaSource   String          @default("code")
   createdById    String
   createdAt      DateTime        @default(now())
   environments   Environment[]
   versions       SchemaVersion[]
+  migrations     Migration[]
+  drafts         SchemaDraft[]
 
   @@unique([organizationId, slug])
   @@map("project")
@@ -63,25 +68,118 @@ model Environment {
 
 /// An immutable schema version. The snapshot itself is an artifact keyed by `checksum`.
 model SchemaVersion {
-  id            String   @id @default(uuid(7))
-  projectId     String
-  project       Project  @relation(fields: [projectId], references: [id], onDelete: Restrict)
-  number        Int
-  checksum      String
-  dialect       String
-  formatVersion Int
-  sizeBytes     Int
+  id             String        @id @default(uuid(7))
+  projectId      String
+  project        Project       @relation(fields: [projectId], references: [id], onDelete: Restrict)
+  number         Int
+  checksum       String
+  dialect        String
+  formatVersion  Int
+  sizeBytes      Int
   /// Provenance: environment id and name, server version, adapter.
-  source        Json
+  source         Json
   /// Objects the introspection reported but did not capture.
-  unsupported   Json
-  note          String?
-  createdById   String
-  createdAt     DateTime @default(now())
+  unsupported    Json
+  note           String?
+  createdById    String
+  createdAt      DateTime      @default(now())
+  migrationsFrom Migration[]   @relation("MigrationFrom")
+  migrationsTo   Migration[]   @relation("MigrationTo")
+  drafts         SchemaDraft[]
 
   @@unique([projectId, number])
   @@index([projectId, checksum])
   @@map("schema_version")
+}
+
+/// One person's working copy of a project's schema in the dashboard editor. Unlike versions,
+/// it changes with every edit; saving it records a new version and deletes the draft.
+model SchemaDraft {
+  id            String         @id @default(uuid(7))
+  projectId     String
+  project       Project        @relation(fields: [projectId], references: [id], onDelete: Restrict)
+  userId        String
+  /// The version the draft started from; null when the project had no versions.
+  baseVersionId String?
+  baseVersion   SchemaVersion? @relation(fields: [baseVersionId], references: [id], onDelete: Restrict)
+  /// Canonical snapshot, as the shadow database reported it after the last edit.
+  snapshot      Json
+  /// What the shadow database reported but did not capture, such as extensions.
+  unsupported   Json
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+
+  @@unique([projectId, userId])
+  @@map("schema_draft")
+}
+
+/// A proposed change from one schema version to another. Its content lives in immutable
+/// revisions; only `status` changes, following the review workflow.
+model Migration {
+  id            String              @id @default(uuid(7))
+  projectId     String
+  project       Project             @relation(fields: [projectId], references: [id], onDelete: Restrict)
+  number        Int
+  title         String
+  /// "draft", "in_review", "approved" or "rejected".
+  status        String
+  fromVersionId String
+  fromVersion   SchemaVersion       @relation("MigrationFrom", fields: [fromVersionId], references: [id], onDelete: Restrict)
+  toVersionId   String
+  toVersion     SchemaVersion       @relation("MigrationTo", fields: [toVersionId], references: [id], onDelete: Restrict)
+  createdById   String
+  createdAt     DateTime            @default(now())
+  updatedAt     DateTime            @updatedAt
+  revisions     MigrationRevision[]
+  reviews       MigrationReview[]
+
+  @@unique([projectId, number])
+  @@map("migration")
+}
+
+/// One state of a migration: answers, plan and script (artifacts), and the shadow
+/// verification result. Never updated or deleted.
+model MigrationRevision {
+  id                 String            @id @default(uuid(7))
+  migrationId        String
+  migration          Migration         @relation(fields: [migrationId], references: [id], onDelete: Restrict)
+  number             Int
+  /// Answers to the planner's questions, keyed by question id.
+  answers            Json
+  /// Artifact keys of the plan (JSON) and the rendered SQL script.
+  planChecksum       String
+  scriptChecksum     String
+  /// Operation counts: total, safe, caution, destructive.
+  summary            Json
+  openQuestions      Int
+  unsupportedChanges Int
+  /// "passed", "failed" or "unavailable" (no shadow database).
+  verification       String
+  verificationDetail String?
+  createdById        String
+  createdAt          DateTime          @default(now())
+  reviews            MigrationReview[]
+
+  @@unique([migrationId, number])
+  @@map("migration_revision")
+}
+
+/// A verdict on one exact revision. Never updated or deleted.
+model MigrationReview {
+  id                      String            @id @default(uuid(7))
+  migrationId             String
+  migration               Migration         @relation(fields: [migrationId], references: [id], onDelete: Restrict)
+  revisionId              String
+  revision                MigrationRevision @relation(fields: [revisionId], references: [id], onDelete: Restrict)
+  reviewerId              String
+  /// "approved" or "rejected".
+  verdict                 String
+  comment                 String?
+  acknowledgedDestructive Boolean           @default(false)
+  createdAt               DateTime          @default(now())
+
+  @@index([migrationId, createdAt])
+  @@map("migration_review")
 }
 
 /// Privileged actions. Details never contain secrets.

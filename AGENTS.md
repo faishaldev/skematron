@@ -172,18 +172,20 @@ Trial duration, quota, grace period, and entitlements must be configuration/poli
 
 Pre-alpha. What exists:
 
-- `packages/core` (`@skematron/core`): snapshot format v1, canonical JSON with SHA-256 checksums, and `planMigration` (ordered operations with risk levels, warnings and unsupported changes).
-- `packages/adapters` (`@skematron/adapters`): read-only PostgreSQL 14+ introspection (`introspectPostgres`) and SQL rendering (`renderPostgresMigration`).
+- `packages/core` (`@skematron/core`): snapshot format v1, canonical JSON with SHA-256 checksums, schema editing functions (`addTable`, `addColumn`, …), and `planMigration` (ordered operations with risk levels, warnings and unsupported changes, plus questions about possible renames and backfills that answers resolve).
+- `packages/adapters` (`@skematron/adapters`): read-only PostgreSQL 14+ introspection (`introspectPostgres`), SQL rendering (`renderPostgresMigration`), and the Prisma Schema adapter (`preparePrismaSchema`).
 - `packages/storage` (`@skematron/storage`): content-addressed, checksum-verified artifact files.
 - `apps/web` (`@skematron/web`): the **dashboard**, in single-organization mode. It runs on Next.js 16, Better Auth and Prisma 7, with a metadata database in `prisma/`.
   - First-run setup and invitation-only sign-up.
   - Roles: viewer, member, admin, owner.
   - Projects, and environments whose connection URLs are encrypted.
-  - Versions are imported read-only, immutable and checksummed.
+  - Versions are immutable and checksummed, imported read-only from an environment or from a `schema.prisma` (through the Prisma CLI and a shadow database).
   - Compare versions, check drift, export SQL or JSON.
+  - A schema editor for projects whose schema source is "dashboard": add tables, columns, indexes and foreign keys in a private draft, checked by PostgreSQL in a shadow database, then save it as a version.
+  - Migrations between versions: guided questions instead of SQL, immutable revisions checked in a shadow database (`SKEMATRON_SHADOW_DATABASE_URL`), and four-eyes review (an admin or owner who did not write it approves).
   - An audit log.
 
-Not built yet: hosted multi-tenant SaaS mode (SSRF guard, quotas, billing), the CLI and API tokens, saved plans and approvals, apply/execution, Prisma and SQL DDL import, email delivery, and Docker Compose. The CLI command names above are still plans. See `ai/knowledges/architecture.md` and `docs/self-hosting.md`.
+Not built yet: applying migrations to environments (Phase 1b) and production protection, hosted multi-tenant SaaS mode (SSRF guard, quotas, billing), the CLI and API tokens, SQL DDL import, multi-file Prisma schemas and Prisma migration history import, email delivery, and Docker Compose. The CLI command names above are still plans. See `ai/knowledges/architecture.md` and `docs/self-hosting.md`.
 
 ## Development
 
@@ -198,15 +200,16 @@ Not built yet: hosted multi-tenant SaaS mode (SSRF guard, quotas, billing), the 
   - `pnpm test`, `pnpm typecheck`, `pnpm format`
   - `pnpm sync:ai`: copy `ai/skills` to the tool folders.
 - Local databases:
-  - `pnpm db:start` starts a disposable, socket-only local PostgreSQL in `.local/`. It holds `skematron` (the metadata database) and `skematron_test` (tests and the demo schema).
+  - `pnpm db:start` starts a disposable, socket-only local PostgreSQL in `.local/`. It holds `skematron` (the metadata database) and `skematron_test` (tests and the demo schema), and the `skematron_shadow` role for shadow databases (`SKEMATRON_SHADOW_DATABASE_URL`).
   - It adds any missing `.env` keys with generated secrets, and never overwrites existing ones.
   - `pnpm db:stop` stops it. The `db:test:*` names are aliases.
 - Metadata database (Prisma, see `ai/rules/metadata.md`):
   - `pnpm db:migrate` creates and applies migrations in development; `pnpm db:deploy` applies them in production.
-  - `pnpm db:generate` regenerates the client. Install runs it too.
-- PostgreSQL integration tests run only when `SKEMATRON_TEST_DATABASE_URL` is set (`.env`, git-ignored). Never point it at a shared or production database.
+  - `pnpm db:generate` regenerates the client. Install runs it too; Prisma 7's `migrate dev` does not, so run it after `db:migrate`.
+- PostgreSQL integration tests run only when `SKEMATRON_TEST_DATABASE_URL` is set (`.env`, git-ignored); the migration tests also need `SKEMATRON_SHADOW_DATABASE_URL`. Never point either at a shared or production server.
 - Try it by hand:
   - `pnpm web` starts the dashboard at <http://127.0.0.1:3100>. The first visit goes to `/setup`.
+  - `packages/adapters/src/prisma/fixtures/v1.prisma` and `v2.prisma` are sample Prisma schemas: import both, then create a migration between them.
   - `pnpm db:seed [v1|v2]` loads a sample `demo` schema into `skematron_test`. It writes to the local cluster only. Add it as an environment with that URL and schema `demo`; loading `v2` later gives Compare something to show.
   - `pnpm example:export [schema…]` runs `packages/adapters/examples/export-schema.ts`. It is read-only, and uses `DATABASE_URL` or else the test database.
 - Configuration for self-hosting: `docs/self-hosting.md`.
@@ -228,6 +231,7 @@ All AI-facing documentation lives in `ai/`. Before changing code, read this file
 - **Skills:**
   - `ai/skills/documenting-changes`: run it at the end of every change.
   - `ai/skills/extending-postgres-support`: use it to capture new PostgreSQL objects or properties.
+  - `ai/skills/walking-through-the-dashboard`: use it to click through a changed dashboard flow end to end without touching the dev data.
 
   Edit skills only in `ai/skills/`. `pnpm sync:ai` copies them to `.claude/skills` and `.codex/skills`; never edit those copies.
 - **Knowledges** (`ai/knowledges/`): architecture, glossary, snapshot format, PostgreSQL support, business model (SaaS and self-hosted, license pending), decisions and gotchas.

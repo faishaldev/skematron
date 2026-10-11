@@ -24,3 +24,19 @@ it("adapter source imports only relative modules and @skematron/core", async () 
     }
   }
 });
+
+// Schema-tool adapters (Prisma Schema) and database adapters (PostgreSQL) stay separate.
+it("the Prisma schema adapter does not import the PostgreSQL adapter", async () => {
+  const directory = join(import.meta.dirname, "prisma");
+  const files = (await readdir(directory)).filter((file) =>
+    file.endsWith(".ts"),
+  );
+  assert.ok(files.length > 0);
+  for (const file of files) {
+    const source = await readFile(join(directory, file), "utf8");
+    assert.ok(
+      !source.includes("../postgres"),
+      `prisma/${file} imports the PostgreSQL adapter`,
+    );
+  }
+});

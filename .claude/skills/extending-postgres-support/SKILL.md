@@ -28,10 +28,12 @@ Read `ai/rules/core.md`, `ai/rules/adapters.md` and `ai/rules/testing.md` first.
 4. **Planner (`plan.ts`).**
    - Add operation kinds, a phase in `Phase` that respects dependencies, and a risk level with warnings for each.
    - Put anything you cannot express in `unsupported`.
-   - Add `plan.test.ts` cases for order, risk and unsupported changes.
+   - If the new field names tables, columns or sequences (as key column lists and foreign key references do), update `renameIn` in `questions.ts`, so answered renames carry it along. Fields that hold raw SQL stay as they are; they are recreated.
+   - Add `plan.test.ts` cases for order, risk and unsupported changes, and a `questions.test.ts` case if renames touch the new field.
 5. **Renderer (`packages/adapters/src/postgres/render.ts`).**
    - Render each new operation, quoting identifiers and literals.
    - Add expected-SQL cases to `render.test.ts`.
+   - Describe each new operation in plain language in the dashboard's `describeOperation` (`apps/web/app/components/plan-view.tsx`).
 6. **Introspection (`queries.ts`, `introspect.ts`).**
    - Read the catalog with explicit casts and JSON lists. Gate version-specific columns on `server_version_num`.
    - Map rows with the validating helpers (`text`, `bool`, `int`, `textList`).

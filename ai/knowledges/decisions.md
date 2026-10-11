@@ -167,3 +167,66 @@ An append-only log of design decisions.
   - It also creates the `skematron` metadata database, and adds missing `.env` keys with generated secrets: `SKEMATRON_DATABASE_URL`, `SKEMATRON_SECRET_KEY`, `BETTER_AUTH_SECRET` and `BETTER_AUTH_URL`.
   - It never overwrites existing keys.
 - **Consequences.** A fresh clone runs the dashboard with `pnpm install`, `pnpm db:start`, `pnpm db:migrate` and `pnpm web`.
+
+## D17: A shadow database server for SQL derived from user input (2026-10-10, accepted)
+
+- **Context.** Prisma schema import and migration verification have to run SQL that comes from users (Prisma's DDL with `dbgenerated` expressions, plans built from imported snapshots) to see what it really does. Running it against an environment would change a user's database; parsing it ourselves would be guesswork.
+- **Decision.**
+  - `SKEMATRON_SHADOW_DATABASE_URL` points at the maintenance database of a dedicated, disposable PostgreSQL 14+ server, with a role that has CREATEDB and is not a superuser. `lib/shadow.ts` refuses a superuser role.
+  - Every run creates `skematron_shadow_<random>`, connects with statement and lock timeouts, and drops it with `WITH (FORCE)` afterwards, also on failure. The drop is guarded by the prefix.
+  - Without the variable, Prisma import fails with a clear message and verification is recorded as `unavailable`, which blocks submission.
+  - Locally, `pnpm db:start` creates the `skematron_shadow` role in the development cluster.
+- **Consequences.**
+  - Verification proves a plan against an empty copy of `from`. It does not prove the plan against real data: rows that violate a new constraint, and views or triggers Skematron does not capture, can still fail in a real database.
+  - A process killed mid-run can leave a `skematron_shadow_*` database behind; it can be dropped by hand.
+  - Anyone who may import a `schema.prisma` (member and up) can effectively run SQL there: Prisma inserts `dbgenerated(...)` expressions into its DDL verbatim. The non-superuser role, the per-run database and the timeouts bound the damage. That is acceptable for one self-hosted team, but hosted multi-tenant mode needs stronger isolation, such as a shadow server per tenant or a sandbox.
+
+## D18: `schema.prisma` becomes a version through Prisma's own CLI (2026-10-10, accepted)
+
+- **Context.** Teams using Prisma keep their schema in `schema.prisma`. Writing our own Prisma parser would drift from Prisma's behavior (defaults, native types, relation constraints, index names).
+- **Decision.**
+  - `@skematron/adapters` gets a schema-tool adapter, `prisma/schema-file.ts`. `preparePrismaSchema` finds the top-level blocks, requires exactly one `postgresql` datasource, and blanks the `url`, `directUrl` and `shadowDatabaseUrl` lines. Line numbers stay the same, so Prisma's error messages match the uploaded file. Generators are kept, because they carry preview features that the schema may need (`extensions`, `views`), and `migrate diff` never runs them.
+  - The web app runs the Prisma CLI that it depends on (`prisma@7.10.0`): `migrate diff --from-empty --to-schema schema.prisma --script`, in a temporary directory, with a 60-second timeout and an environment that holds none of Skematron's secrets. Prisma 7 needs a config file with a datasource URL even for this offline command; Skematron writes one that points at port 1 on loopback.
+  - The DDL runs in a shadow database, and introspecting that database gives the snapshot. The prepared schema file is stored as an artifact, and the version's source records `prisma-schema`, the Prisma version and the file's checksum.
+- **Consequences.** Prisma 5, 6 and 7 schemas work. Multi-file schemas, `prisma/migrations` history and `_prisma_migrations` are not read yet.
+
+## D19: Guided plans: questions with stable ids instead of guessed renames (2026-10-10, accepted)
+
+- **Context.** Matching by name turns every rename into a drop plus a create, which loses data. Adding a NOT NULL column without a default fails on tables with rows. Users should not have to write SQL to fix either.
+- **Decision.**
+  - `planMigration(from, to, { answers })` returns `questions` (in `packages/core/src/questions.ts`): `rename-table`, `rename-column` and `rename-sequence` with their candidates, and `backfill`. A question's id is a JSON array, for example `["rename-column","public","User","fullName"]`.
+  - Candidates are added objects of the same shape: a table with the same column names and types, a column with the same type, collation and generation, a sequence with the same settings.
+  - Questions come in stages (tables, columns, sequences, backfills); answers to earlier stages decide which later questions exist.
+  - A rename answer is applied to a copy of `from`, including key column lists, foreign key references and sequence owners. The plan then starts with `rename-*` operations and diffs as usual. SQL fragments that name the old object (index definitions, check expressions) are recreated; the shadow check confirms the end state.
+  - A backfill answer adds the column with `DEFAULT '<value>'::<type>` and drops the default afterwards.
+  - Unknown or invalid answers throw `PlanningError`, unless `ignoreUnusedAnswers` is set, which the dashboard uses while answers are being edited.
+- **Consequences.** The core rule "do not guess renames" still holds: Skematron proposes, a person decides. A table renamed together with column changes is not detected; it stays a drop plus a create.
+
+## D20: Migrations are immutable revisions with four-eyes review (2026-10-10, accepted)
+
+- **Context.** The goal is for every developer to create and review migrations in the dashboard instead of locally. An approval must mean that a second person saw exactly what will run.
+- **Decision.**
+  - `migration` holds the number, title, from and to versions, and status. `migration_revision` rows are never updated: each holds the answers, the plan and script as artifacts, the risk summary and the shadow verification result. `migration_review` rows record verdicts on one exact revision.
+  - Status: draft → in_review → approved or rejected. Any new revision returns the migration to draft, so an approval never carries over to different content.
+  - Submitting needs no open questions, no unsupported changes and a passed verification.
+  - Reviewing needs the `review-migrations` permission (admin and owner). The reviewer must not have written the migration or the revision. Approving destructive operations needs an explicit acknowledgment, and rejecting needs a comment. The reviewer approves the revision they looked at; if it changed in between, the review is refused.
+  - Status changes and revision numbers take a per-migration advisory lock.
+- **Consequences.** Phase 1b can apply an approved revision by its stored script checksum. Production-specific approval rules (more reviewers, environment promotion) come later.
+
+## D21: Schemas written in the dashboard: a per-project source, private drafts, normalized by PostgreSQL (2026-10-10, accepted)
+
+- **Context.** Teams without an ORM, or teams that design the database first, want to add tables and columns in Skematron itself. For teams whose schema lives in code (a `schema.prisma`), editing in the dashboard would create a second source of truth: the application's schema file would not know about the change.
+- **Decision.**
+  - Each project has a schema source, "code" or "dashboard", chosen at creation. Admins can change it (audited as `project.update`).
+    - The editor works only for "dashboard" projects.
+    - Prisma import works only for "code" projects.
+    - Environment imports work for both.
+  - Edits go into a private, mutable draft per person and project (`schema_draft`), started from the latest version.
+    - Core's edit functions (`addTable`, `addColumn`, `addUniqueConstraint`, `addIndex`, `addForeignKey`) apply each edit.
+    - The whole draft is then rebuilt in a shadow database and introspected. The stored draft is therefore always what PostgreSQL really creates: `int` becomes `integer`, and index definitions are in `pg_get_indexdef` form. An invalid edit is rejected with PostgreSQL's own message.
+  - Typed types must look like a type, and defaults may not contain `;` or comments (`lib/schema-input.ts`). Everything still runs only in the shadow database.
+  - Saving goes through `recordVersion` with `basedOn`. Under the per-project lock, it is refused when another version was saved since the draft started, so a stale draft never drops newer changes. There is no rebase yet: discard and start again.
+- **Consequences.**
+  - Versions from the editor are interchangeable with imported ones, so drift checks and migrations work on them unchanged. A NOT NULL column added to an existing table leads to a backfill question in the migration.
+  - The editor needs the shadow database.
+  - Not yet supported in the editor: dropping or renaming objects, enums, check constraints, comments, and exporting a `schema.prisma` for dashboard projects.

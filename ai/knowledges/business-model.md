@@ -26,6 +26,7 @@ Get legal review before choosing.
 
 - **Free / self-hosted:**
   - The full core workflow for a team: import → version → diff → review → export/apply.
+  - "Review" includes guided migrations and the single four-eyes approval (D20). Multi-step and production-specific approval policies are the paid part.
   - It must be genuinely useful; that is the product's marketing and AGENTS.md's no-lock-in principle.
   - Export must never be paywalled.
 - **Paid** (SaaS upper tiers, and an Enterprise license for self-hosted): features organizations need, not individuals:

@@ -3,6 +3,14 @@ import {
   compareNames,
   displayName,
 } from "./canonical.ts";
+import { PlanningError } from "./errors.ts";
+import {
+  resolveQuestions,
+  type Answer,
+  type Answers,
+  type Question,
+  type RenameOperation,
+} from "./questions.ts";
 import type {
   CheckConstraint,
   Column,
@@ -31,7 +39,23 @@ export type ConstraintKind = "primary-key" | "unique" | "check" | "foreign-key";
 
 export type EnumValuePosition = { before: string } | { after: string } | null;
 
+export { PlanningError } from "./errors.ts";
+export type {
+  Answer,
+  Answers,
+  BackfillAnswer,
+  BackfillQuestion,
+  Question,
+  RenameAnswer,
+  RenameColumnQuestion,
+  RenameOperation,
+  RenameSequenceQuestion,
+  RenameTableQuestion,
+} from "./questions.ts";
+
 export type Operation =
+  /** Renames run first, so every later operation uses the new names. */
+  | RenameOperation
   | { kind: "create-namespace"; namespace: string }
   | { kind: "drop-namespace"; namespace: string }
   | { kind: "create-enum"; namespace: string; enum: EnumType }
@@ -60,8 +84,17 @@ export type Operation =
    */
   | { kind: "create-table"; namespace: string; table: Table }
   | { kind: "drop-table"; namespace: string; tableName: string }
-  /** The column's comment is a separate operation. */
-  | { kind: "add-column"; namespace: string; tableName: string; column: Column }
+  /**
+   * The column's comment is a separate operation. With `backfill`, existing rows
+   * get that value (as a temporary default, dropped by a later operation).
+   */
+  | {
+      kind: "add-column";
+      namespace: string;
+      tableName: string;
+      column: Column;
+      backfill?: string;
+    }
   | {
       kind: "drop-column";
       namespace: string;
@@ -178,13 +211,18 @@ export interface MigrationPlan {
   /** In execution order. */
   operations: PlannedOperation[];
   unsupported: UnsupportedChange[];
+  /** Decisions for a person, with the answers given. Open ones have `answer: null`. */
+  questions: Question[];
 }
 
-export class PlanningError extends Error {
-  constructor(message: string) {
-    super(message);
-    this.name = "PlanningError";
-  }
+export interface PlanOptions {
+  /** Answers to questions from an earlier plan, keyed by question id. */
+  answers?: Answers;
+  /**
+   * Drop answers that match no current question instead of failing. For
+   * interactive editing, where one answer can make other questions disappear.
+   */
+  ignoreUnusedAnswers?: boolean;
 }
 
 /** True when the plan has nothing to do, i.e. both snapshots are equivalent. */
@@ -192,32 +230,49 @@ export function isEmptyPlan(plan: MigrationPlan): boolean {
   return plan.operations.length === 0 && plan.unsupported.length === 0;
 }
 
+/** Questions that still need an answer. */
+export function openQuestions(plan: MigrationPlan): Question[] {
+  return plan.questions.filter((question) => question.answer === null);
+}
+
+/** The answers the plan used, keyed by question id: what to store to reproduce it. */
+export function answersOf(plan: MigrationPlan): Record<string, Answer> {
+  const answers: Record<string, Answer> = {};
+  for (const question of plan.questions) {
+    if (question.answer !== null) answers[question.id] = question.answer;
+  }
+  return answers;
+}
+
 // Execution phases. Operations run in phase order, then by (namespace, table, name).
 const Phase = {
-  createNamespace: 0,
-  createEnum: 1,
-  createSequence: 2,
-  releaseSequenceOwner: 3,
-  dropForeignKey: 4,
-  dropIndexOrConstraint: 5,
-  dropTable: 6,
-  createTable: 7,
-  dropColumn: 8,
-  addColumn: 9,
-  dropDefault: 10,
-  dropIdentity: 11,
-  alterType: 12,
-  setDefault: 13,
-  dropNotNull: 14,
-  setNotNull: 15,
-  addIdentity: 16,
-  assignSequenceOwner: 17,
-  addConstraintOrIndex: 18,
-  addForeignKey: 19,
-  dropSequence: 20,
-  dropEnum: 21,
-  dropNamespace: 22,
-  comment: 23,
+  renameTable: 0,
+  renameColumn: 1,
+  renameSequence: 2,
+  createNamespace: 3,
+  createEnum: 4,
+  createSequence: 5,
+  releaseSequenceOwner: 6,
+  dropForeignKey: 7,
+  dropIndexOrConstraint: 8,
+  dropTable: 9,
+  createTable: 10,
+  dropColumn: 11,
+  addColumn: 12,
+  dropDefault: 13,
+  dropIdentity: 14,
+  alterType: 15,
+  setDefault: 16,
+  dropNotNull: 17,
+  setNotNull: 18,
+  addIdentity: 19,
+  assignSequenceOwner: 20,
+  addConstraintOrIndex: 21,
+  addForeignKey: 22,
+  dropSequence: 23,
+  dropEnum: 24,
+  dropNamespace: 25,
+  comment: 26,
 } as const;
 
 interface Entry {
@@ -242,6 +297,8 @@ interface Context {
   retypedColumns: Set<string>;
   /** Unchanged foreign keys on surviving tables; may need recreating around other changes. */
   keptForeignKeys: KeptForeignKey[];
+  /** Answered backfill values by column id. */
+  backfills: Map<string, string>;
 }
 
 const tableId = (namespace: string, table: string): string =>
@@ -289,20 +346,30 @@ function emptyNamespace(name: string): Namespace {
  * into `to`, each with a risk level and warnings. Differences that cannot be
  * expressed are listed in `unsupported` instead of being skipped.
  *
- * Objects are matched by name, so a rename appears as a drop plus a create.
+ * Objects are matched by name, so a rename appears as a drop plus a create,
+ * and a possible rename becomes a question instead of a guess. Answers
+ * (`options.answers`) turn drops plus creates into renames and give added
+ * NOT NULL columns a value for existing rows. See `questions.ts`.
  * Column position is ignored because PostgreSQL cannot reorder columns.
  */
 export function planMigration(
   from: SchemaSnapshot,
   to: SchemaSnapshot,
+  options: PlanOptions = {},
 ): MigrationPlan {
   if (from.dialect !== to.dialect) {
     throw new PlanningError(
       `Cannot plan between dialects ${from.dialect} and ${to.dialect}.`,
     );
   }
-  const source = canonicalizeSnapshot(from);
   const target = canonicalizeSnapshot(to);
+  const resolved = resolveQuestions(
+    canonicalizeSnapshot(from),
+    target,
+    options.answers ?? {},
+    options.ignoreUnusedAnswers ?? false,
+  );
+  const source = resolved.source;
 
   const targetTables = new Set<string>();
   for (const namespace of target.namespaces) {
@@ -325,7 +392,14 @@ export function planMigration(
     keyChangedTables: new Set(),
     retypedColumns: new Set(),
     keptForeignKeys: [],
+    backfills: new Map(
+      resolved.backfills.map((backfill) => [
+        columnId(backfill.namespace, backfill.tableName, backfill.columnName),
+        backfill.value,
+      ]),
+    ),
   };
+  planRenames(context, resolved.renames);
 
   const sourceNamespaces = byName(source.namespaces);
   const targetNamespaces = byName(target.namespaces);
@@ -353,7 +427,49 @@ export function planMigration(
     dialect: target.dialect,
     operations: context.entries.map((entry) => entry.planned),
     unsupported: context.unsupported,
+    questions: resolved.questions,
   };
+}
+
+function planRenames(
+  context: Context,
+  renames: readonly RenameOperation[],
+): void {
+  const stopsWorking =
+    "Applications that still use the old name stop working once this runs; release the matching code at the same time.";
+  for (const rename of renames) {
+    switch (rename.kind) {
+      case "rename-table":
+        add(
+          context,
+          Phase.renameTable,
+          [rename.namespace, rename.tableName],
+          rename,
+          "caution",
+          [stopsWorking],
+        );
+        break;
+      case "rename-column":
+        add(
+          context,
+          Phase.renameColumn,
+          [rename.namespace, rename.tableName, rename.columnName],
+          rename,
+          "caution",
+          [stopsWorking],
+        );
+        break;
+      case "rename-sequence":
+        add(
+          context,
+          Phase.renameSequence,
+          [rename.namespace, rename.sequenceName],
+          rename,
+          "safe",
+        );
+        break;
+    }
+  }
 }
 
 function planNamespace(
@@ -836,9 +952,16 @@ function planNewColumn(
   tableName: string,
   column: Column,
 ): void {
+  const backfill = context.backfills.get(
+    columnId(namespace, tableName, column.name),
+  );
   let risk: Risk = "safe";
   const warnings: string[] = [];
-  if (
+  if (backfill !== undefined) {
+    warnings.push(
+      `Existing rows get the value ${JSON.stringify(backfill)}. Fails if it is not valid for type ${column.type}.`,
+    );
+  } else if (
     !column.nullable &&
     column.default === null &&
     column.identity === null &&
@@ -863,10 +986,26 @@ function planNewColumn(
       namespace,
       tableName,
       column: { ...column, comment: null },
+      ...(backfill === undefined ? {} : { backfill }),
     },
     risk,
     warnings,
   );
+  if (backfill !== undefined) {
+    // The backfill is a temporary default; the target column has none.
+    add(
+      context,
+      Phase.dropDefault,
+      [namespace, tableName, column.name],
+      {
+        kind: "drop-column-default",
+        namespace,
+        tableName,
+        columnName: column.name,
+      },
+      "safe",
+    );
+  }
   if (column.comment !== null) {
     add(
       context,

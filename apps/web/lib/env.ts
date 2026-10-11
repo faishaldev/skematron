@@ -30,6 +30,16 @@ export function secretKey(): Buffer {
   return parseSecretKey(required("SKEMATRON_SECRET_KEY"));
 }
 
+/**
+ * A dedicated, disposable PostgreSQL server (maintenance database URL, role with CREATEDB,
+ * never a superuser) where Skematron creates temporary databases to check migrations and
+ * convert Prisma schemas. Optional: without it those features say so.
+ */
+export function shadowDatabaseUrl(): string | null {
+  const value = process.env.SKEMATRON_SHADOW_DATABASE_URL;
+  return value === undefined || value === "" ? null : value;
+}
+
 /** Artifact directory. Required in production; development defaults to .local/artifacts. */
 export function artifactDirectory(): string {
   const configured = process.env.SKEMATRON_ARTIFACT_DIR;

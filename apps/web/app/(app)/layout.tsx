@@ -12,6 +12,9 @@ export default async function AppLayout({ children }: { children: ReactNode }) {
     <>
       <header className="top">
         <Link href="/projects" className="brand">
+          <span className="brand-mark" aria-hidden>
+            S
+          </span>
           Skematron
         </Link>
         <nav className="nav">
@@ -25,10 +28,12 @@ export default async function AppLayout({ children }: { children: ReactNode }) {
         </nav>
         <span className="spacer" />
         <span className="tag">
-          {actor.name} · {actor.role}
+          {actor.name} <span className="badge neutral">{actor.role}</span>
         </span>
         <form action={signOutAction}>
-          <button type="submit">Sign out</button>
+          <button type="submit" className="small">
+            Sign out
+          </button>
         </form>
       </header>
       <main>{children}</main>

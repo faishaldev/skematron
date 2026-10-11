@@ -10,6 +10,7 @@ import {
   ErrorPanel,
   Flash,
   formatDate,
+  PageHeader,
   type SearchParams,
 } from "../../../components/ui.tsx";
 import {
@@ -41,9 +42,12 @@ export default async function MembersPage({
 
   return (
     <>
-      <h1>Members</h1>
+      <PageHeader
+        title="Members"
+        subtitle="Who can use this Skematron. Viewers read; members import schemas and write migrations; admins also review migrations, manage projects and invite people."
+      />
       <Flash searchParams={searchParams} />
-      <div className="card">
+      <div className="card flush">
         <table>
           <thead>
             <tr>
@@ -127,8 +131,8 @@ export default async function MembersPage({
       </form>
       <p className="hint">
         No email is sent: copy the invitation link and share it yourself. Roles:
-        viewer (read only), member (+ import versions, check drift), admin (+
-        projects, environments, members).
+        viewer (read only), member (+ import schemas, write migrations), admin
+        (+ review migrations, projects, databases, members).
       </p>
 
       <h2>Pending invitations</h2>

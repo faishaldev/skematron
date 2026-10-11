@@ -77,13 +77,21 @@ Treat these as limitations, not guarantees.
 
 | Operation | Risk | Notes |
 | --- | --- | --- |
-| Create namespace, enum, sequence or table; add a nullable column; drop NOT NULL; set or drop a default; change or drop identity; drop an index or constraint; comments; add an enum value | safe | A new enum value cannot be used in the same transaction that adds it. |
+| Create namespace, enum, sequence or table; add a nullable column; drop NOT NULL; set or drop a default; change or drop identity; drop an index or constraint; comments; add an enum value; rename a sequence; add a NOT NULL column with an answered backfill | safe | A new enum value cannot be used in the same transaction that adds it. A backfill fails if the value is not valid for the column's type. |
+| Rename a table or column (answered rename question) | caution | Applications that still use the old name stop working once it runs. |
 | SET NOT NULL; add a NOT NULL column without a default; add PK, unique, check or FK, or create an index, on an existing table; add identity to an existing column; change a sequence's type or range | caution | May fail on existing data or block writes. The warnings suggest NOT VALID or CONCURRENTLY where relevant. |
 | Drop a table, column, namespace, sequence or enum; change a column's type or collation | destructive | Type changes have no USING clause. Add one during review if needed. |
 
+Guided planning (`packages/core/src/questions.ts`):
+
+- **Renames are asked, never guessed.** A missing table, column or sequence with same-shaped candidates becomes a question. Answered `rename`, the plan starts with `ALTER TABLE … RENAME TO`, `ALTER TABLE … RENAME COLUMN` or `ALTER SEQUENCE … RENAME TO`, then diffs as usual.
+  - Index definitions and check expressions that name the old object are recreated, because the snapshot stores them verbatim.
+  - A renamed serial table also asks about its sequence. Renaming the sequence keeps its counter; a new sequence would restart at 1.
+- **Backfills:** an added NOT NULL column without a default on an existing table asks for a value. The answer renders `ADD COLUMN … DEFAULT '<value>'::<type> NOT NULL`, followed by `DROP DEFAULT`. The value is a literal, not an expression.
+
 Known limitations:
 
-- **Matching:** objects are matched by name, so a rename appears as a drop plus a create.
+- **Matching:** objects are matched by name. Without an answer, a rename appears as a drop plus a create. A table renamed in the same change as its columns is not offered as a rename.
 - **Column position** is ignored, because PostgreSQL cannot reorder columns.
 - **Recreation:** changed constraints and indexes are dropped and re-created (no CONCURRENTLY).
 - **Foreign keys** that depend on a re-created key, or whose columns change type, are dropped and re-added around the change.
